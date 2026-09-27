@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Claude 用量儀表
 // @namespace    https://github.com/RyanChen0311
-// @version      1.5.0
+// @version      1.6.0
 // @description  在 claude.ai 顯示 5 小時用量、重置倒數、消耗速度與暫停建議
 // @match        https://claude.ai/*
 // @run-at       document-idle
@@ -133,8 +133,8 @@
 
   // ================= 格式化 =================
   const pct = (x) => `${Math.round(Math.min(999, Math.max(0, x)))}%`;
-  // 每分鐘消耗百分比：0.5 → 「每分鐘 0.5%」，0.08 → 「每分鐘 0.08%」
-  const perMin = (v) => `每分鐘 ${String(Number(v.toFixed(2)))}%`;
+  // 每分鐘消耗百分比：0.5 → 「0.5 %/分」，0.08 → 「0.08 %/分」
+  const perMin = (v) => `${String(Number(v.toFixed(2)))} %/分`;
   const pad = (n) => String(n).padStart(2, '0');
   const fmtHMS = (min) => {
     const s = Math.max(0, Math.floor(min * 60));
@@ -147,6 +147,12 @@
   };
   const waitLine = (r) => `仍需等待 ${Math.max(0, Math.ceil(r))} 分後重置`;
   const hhmm = (t) => new Date(t).toLocaleTimeString('zh-TW', { hour12: false, hour: '2-digit', minute: '2-digit' });
+  // 今天只顯示「時:分」，跨日則加上「月/日」
+  const etaText = (t) => {
+    const d = new Date(t);
+    return d.toDateString() === new Date().toDateString()
+      ? hhmm(t) : `${d.getMonth() + 1}/${d.getDate()} ${hhmm(t)}`;
+  };
   const clock = (t) => new Date(t).toLocaleTimeString('zh-TW', { hour12: false });
 
   // 進度條顏色：依已用量套用嚴重度
@@ -300,7 +306,7 @@
     h('div', { class: 'rates' },
       h('div', {}, h('div', { class: 'label' }, '目前速度'), $.vNow),
       h('div', {}, h('div', { class: 'label' }, '週期平均'), $.vAvg),
-      h('div', {}, h('div', { class: 'label' }, '預估用完'), $.proj)),
+      h('div', {}, h('div', { class: 'label' }, '預估用完時間'), $.proj)),
     $.advice,
     $.foot);
   $.pill = h('button', { class: 'pill', type: 'button', 'data-state': 'idle',
@@ -368,12 +374,13 @@
     $.count.textContent = a.r != null ? fmtHMS(a.r) : '—';
     $.vNow.textContent = a.r == null ? '—' : a.vNow != null ? perMin(a.vNow) : '取樣中';
     $.vAvg.textContent = a.vAvg != null ? perMin(a.vAvg) : '—';
-    // 維持目前速度時，預估用完的時刻；重置前用不完就不給時刻
+    // 依目前實際速率（最近 15 分鐘）推算用完時刻，不考慮中途重置
     $.proj.textContent =
       a.state === 'out' ? '已用完'
-      : a.r == null || !(a.v > 0) ? '—'
-      : a.remain / a.v >= a.r ? '重置前不會用完'
-      : hhmm(Date.now() + (a.remain / a.v) * 60_000);
+      : a.r == null ? '—'
+      : a.vNow == null ? '取樣中'
+      : a.vNow <= 0 ? '目前無消耗'
+      : etaText(Date.now() + (a.remain / a.vNow) * 60_000);
 
     const [head, detail, note] = advice(a);
     $.head.textContent = head;
