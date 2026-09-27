@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Claude 用量儀表
 // @namespace    https://github.com/RyanChen0311
-// @version      1.4.0
+// @version      1.5.0
 // @description  在 claude.ai 顯示 5 小時用量、重置倒數、消耗速度與暫停建議
 // @match        https://claude.ai/*
 // @run-at       document-idle
@@ -238,22 +238,17 @@
       text-shadow:0 1px 0 rgba(255,255,255,.8); }
     .remain, .count { color:var(--bar, #2C84DB); transition:color .6s ease; }
 
-    /* 玻璃管 + 流動液體 */
-    .bar { padding:8px 18px 4px; }
-    .track { height:16px; border-radius:999px; overflow:hidden; background:rgba(255,255,255,.35);
-      box-shadow:inset 0 2px 4px rgba(12,35,64,.18), inset 0 -1px 0 rgba(255,255,255,.85); }
-    .fill { position:relative; height:100%; width:0; border-radius:999px; overflow:hidden;
-      background:var(--bar, #2C84DB);
-      box-shadow:inset 0 2px 3px rgba(255,255,255,.6); }
+    /* 進度條：扁平細條，仿官方 設定 → 用量 */
+    .bar { padding:10px 18px 4px; }
+    .track { height:8px; border-radius:999px; overflow:hidden; background:rgba(12,35,64,.10); }
+    .fill { height:100%; width:0; border-radius:999px; background:var(--bar, #2C84DB); }
     .used { margin-top:6px; font-size:14px; color:var(--dim); font-variant-numeric:tabular-nums; }
 
     .rates { display:grid; grid-template-columns:repeat(3,1fr); gap:8px; padding:12px 18px; }
     .rates .v { font-size:17px; white-space:nowrap; font-weight:600; font-variant-numeric:tabular-nums; }
 
-    /* 建議區：白色水滴卡片，標題依暫停時間分級上色 */
-    .advice { margin:4px 12px 14px; padding:14px 16px; border-radius:18px; color:var(--ink);
-      background:rgba(255,255,255,.88); border:1px solid rgba(255,255,255,.95);
-      box-shadow:0 6px 18px rgba(12,35,64,.12), inset 0 1px 0 #fff; }
+    /* 建議區：純文字，標題依暫停時間分級上色 */
+    .advice { padding:6px 18px 14px; color:var(--ink); }
     .advice .head { font-size:24px; font-weight:700; transition:color .4s ease; }
     .advice[data-tier="g"] .head { color:var(--tier-g); }
     .advice[data-tier="y"] .head { color:var(--tier-y); }
