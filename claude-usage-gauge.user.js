@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Claude 用量儀表
 // @namespace    https://github.com/RyanChen0311
-// @version      1.8.0
+// @version      1.9.0
 // @description  在 claude.ai 顯示 5 小時用量、重置倒數、消耗速度與暫停建議
 // @match        https://claude.ai/*
 // @run-at       document-idle
@@ -243,6 +243,14 @@
       box-shadow:inset 0 1px 0 rgba(255,255,255,.9), 0 2px 6px rgba(12,35,64,.10); }
     button:disabled { opacity:.6; cursor:progress; }
     button:focus-visible { outline:2px solid #2A8BE0; outline-offset:2px; }
+    /* 圖示按鈕：只顯示圖示，無背景與框線 */
+    .icon-btn { display:inline-flex; padding:6px; background:none; border:0; box-shadow:none;
+      border-radius:8px; color:var(--dim); transition:color .2s ease; }
+    .icon-btn:hover { color:var(--ink); }
+    .icon-btn svg { display:block; width:20px; height:20px; }
+    .icon-btn.busy svg { animation:spin .9s linear infinite; }
+    @keyframes spin { to { transform:rotate(360deg); } }
+    @media (prefers-reduced-motion: reduce) { .icon-btn.busy svg { animation:none; } }
 
     .stats { display:grid; grid-template-columns:auto auto; justify-content:space-between; gap:12px;
       padding:18px 18px 8px; }
@@ -297,8 +305,27 @@
   `;
 
   const $ = {};
-  $.refresh  = h('button', { type: 'button', onclick: () => refresh() }, '重新整理');
-  $.collapse = h('button', { type: 'button', onclick: () => setCollapsed(true) }, '收合');
+  // 以 createElementNS 建立 SVG，避開 innerHTML（claude.ai 可能啟用 Trusted Types）
+  function icon(...paths) {
+    const NS = 'http://www.w3.org/2000/svg';
+    const svg = document.createElementNS(NS, 'svg');
+    for (const [k, v] of Object.entries({ viewBox: '0 0 24 24', fill: 'none', stroke: 'currentColor',
+      'stroke-width': '2', 'stroke-linecap': 'round', 'stroke-linejoin': 'round', 'aria-hidden': 'true' })) {
+      svg.setAttribute(k, v);
+    }
+    for (const d of paths) {
+      const p = document.createElementNS(NS, 'path');
+      p.setAttribute('d', d);
+      svg.append(p);
+    }
+    return svg;
+  }
+  $.refresh  = h('button', { class: 'icon-btn', type: 'button', title: '重新整理', 'aria-label': '重新整理',
+    onclick: () => refresh() },
+    icon('M21 12a9 9 0 1 1-9-9c2.52 0 4.93 1 6.74 2.74L21 8', 'M21 3v5h-5'));
+  $.collapse = h('button', { class: 'icon-btn', type: 'button', title: '收合', 'aria-label': '收合',
+    onclick: () => setCollapsed(true) },
+    icon('M5 12h14'));
   $.header   = h('header', {}, h('div', { class: 'title' }, 'Claude 5 小時用量'), $.refresh, $.collapse);
   $.remain   = h('div', { class: 'big remain' }, '—');
   $.count    = h('div', { class: 'big count' }, '—');
@@ -427,7 +454,8 @@
     if (busy) return;
     busy = true;
     $.refresh.disabled = true;
-    $.refresh.textContent = '更新中…';
+    $.refresh.classList.add('busy');
+    $.refresh.title = '更新中…';
     try {
       addSample(await fetchUsage());
       lastOk = Date.now(); lastErr = null;
@@ -440,7 +468,8 @@
     } finally {
       busy = false;
       $.refresh.disabled = false;
-      $.refresh.textContent = '重新整理';
+      $.refresh.classList.remove('busy');
+      $.refresh.title = '重新整理';
       render(); renderFoot();
     }
   }
