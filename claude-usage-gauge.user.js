@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Claude 用量儀表
 // @namespace    https://github.com/RyanChen0311
-// @version      2.1.2
+// @version      2.1.3
 // @description  在 claude.ai 顯示 5 小時用量、重置倒數、消耗速度與暫停建議
 // @match        https://claude.ai/*
 // @run-at       document-idle
@@ -157,6 +157,11 @@
   const etaText = (t) => {
     const d = new Date(t);
     return `${d.getMonth() + 1} 月 ${d.getDate()} 日 ${d.getHours()} 時 ${d.getMinutes()} 分`;
+  };
+  // 重置時間：「X月X日X時X分」（不加空格）
+  const resetText = (t) => {
+    const d = new Date(t);
+    return `${d.getMonth() + 1}月${d.getDate()}日${d.getHours()}時${d.getMinutes()}分`;
   };
   const clock = (t) => new Date(t).toLocaleTimeString('zh-TW', { hour12: false });
 
@@ -500,7 +505,7 @@
     $.advice.dataset.tier = tierFor(a);
     $.usedText.textContent = `已用 ${pct(a.u)}`;
     const resetTs = samples[samples.length - 1].r;
-    $.resetAt.textContent = resetTs && a.state !== 'rolled' ? `重置時間 ${etaText(resetTs)}` : '';
+    $.resetAt.textContent = resetTs && a.state !== 'rolled' ? `${resetText(resetTs)} 重置` : '';
     $.count.textContent = a.r != null ? fmtHMS(a.r) : '—';
     $.vNow.textContent = a.r == null ? '—' : a.vNow != null ? perMin(a.vNow) : '取樣中';
     $.vAvg.textContent = a.vAvg != null ? perMin(a.vAvg) : '—';
