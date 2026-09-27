@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Claude 用量儀表
 // @namespace    https://github.com/RyanChen0311
-// @version      2.0.0
+// @version      2.1.0
 // @description  在 claude.ai 顯示 5 小時用量、重置倒數、消耗速度與暫停建議
 // @match        https://claude.ai/*
 // @run-at       document-idle
@@ -246,8 +246,10 @@
     @keyframes drift { to { transform:translate(220px, 260px) scale(1.15); } }
 
     header { display:flex; align-items:center; gap:8px; padding:12px 12px 10px 18px;
-      border-bottom:1px solid rgba(255,255,255,.6); cursor:grab; user-select:none; touch-action:none; }
-    header:active { cursor:grabbing; }
+      border-bottom:1px solid rgba(255,255,255,.6); }
+    /* 整個面板都可以抓著拖曳；按鈕與縮放把手維持各自的游標 */
+    .panel, .pill { cursor:grab; user-select:none; -webkit-user-select:none; touch-action:none; }
+    .dragging .panel, .dragging .pill { cursor:grabbing; }
     .title { flex:1; font-size:14px; color:var(--dim); }
     button { font:inherit; font-size:14px; color:var(--ink); cursor:pointer; padding:6px 14px;
       background:rgba(255,255,255,.45); border:1px solid rgba(255,255,255,.85); border-radius:999px;
@@ -399,23 +401,52 @@
   if (ui.x != null) place(ui.x, ui.y);
   addEventListener('resize', () => { if (ui.x != null) place(ui.x, ui.y); });
 
-  (function enableDrag(handle) {
-    let sx, sy, ox, oy, dragging = false;
-    handle.addEventListener('pointerdown', (e) => {
-      if (e.target.closest('button')) return;
-      const rect = host.getBoundingClientRect();
-      sx = e.clientX; sy = e.clientY; ox = rect.left; oy = rect.top; dragging = true;
-      handle.setPointerCapture(e.pointerId);
+  // ---- 拖曳移動 ----
+  // 按下時記錄「游標起點」與「面板起點」，移動時把位移量加回面板起點。
+  // 位移超過門檻才算拖曳，否則視為點擊（讓收合膠囊仍可點一下展開）。
+  const DRAG_THRESHOLD = 4;   // px
+  function makeDraggable(el) {
+    let st = null;            // 拖曳狀態：null 代表沒有按住
+    let suppressClick = false;
+
+    el.addEventListener('pointerdown', (e) => {
+      if (e.button !== 0) return;                       // 只接受主要按鍵
+      if (el === $.panel && e.target.closest('button, .rz')) return;  // 按鈕與縮放把手不觸發拖曳
+      const r = host.getBoundingClientRect();
+      st = { px: e.clientX, py: e.clientY, left: r.left, top: r.top, moved: false, id: e.pointerId };
+      el.setPointerCapture(e.pointerId);                // 游標移出元素也持續收到事件（小膠囊特別需要）
     });
-    handle.addEventListener('pointermove', (e) => {
-      if (dragging) place(ox + e.clientX - sx, oy + e.clientY - sy);
+
+    el.addEventListener('pointermove', (e) => {
+      if (!st || e.pointerId !== st.id) return;
+      const dx = e.clientX - st.px, dy = e.clientY - st.py;
+      if (!st.moved) {
+        if (Math.hypot(dx, dy) < DRAG_THRESHOLD) return;
+        st.moved = true;
+        $.wrap.classList.add('dragging');
+      }
+      place(st.left + dx, st.top + dy);                 // 新位置 = 面板起點 + 游標位移
     });
-    handle.addEventListener('pointerup', () => {
-      if (!dragging) return;
-      dragging = false;
-      saveJSON(CFG.uiKey, ui);
-    });
-  })($.header);
+
+    const end = () => {
+      if (!st) return;
+      if (st.moved) {
+        suppressClick = true;                           // 拖曳結束後的那次 click 不算數
+        $.wrap.classList.remove('dragging');
+        saveJSON(CFG.uiKey, ui);                        // 記住位置
+      }
+      st = null;
+    };
+    el.addEventListener('pointerup', end);
+    el.addEventListener('pointercancel', end);
+
+    // 捕獲階段攔截拖曳後誤觸的 click
+    el.addEventListener('click', (e) => {
+      if (suppressClick) { suppressClick = false; e.stopPropagation(); e.preventDefault(); }
+    }, true);
+  }
+  makeDraggable($.panel);
+  makeDraggable($.pill);
 
   // ---- 拖曳邊緣等比縮放 ----
   // 內容版面固定，因此寬高鎖定比例一起縮放，文字與數字跟著放大縮小
