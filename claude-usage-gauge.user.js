@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Claude 用量儀表
 // @namespace    https://github.com/RyanChen0311
-// @version      2.1.1
+// @version      2.1.2
 // @description  在 claude.ai 顯示 5 小時用量、重置倒數、消耗速度與暫停建議
 // @match        https://claude.ai/*
 // @run-at       document-idle
@@ -297,6 +297,7 @@
     .advice .note:empty { display:none; }
     .foot { padding:0 18px 14px; font-size:12px; color:var(--dim); }
     .foot.err { color:var(--tier-r); }
+    .foot:empty { display:none; }
 
     /* 收合後的水滴膠囊 */
     .pill { display:none; font-size:20px; font-weight:700; font-variant-numeric:tabular-nums;
@@ -525,9 +526,9 @@
     if (lastErr) {
       $.foot.className = 'foot err';
       $.foot.textContent = `讀取失敗：${lastErr}。按「重新整理」重試。`;
-    } else if (lastOk) {
+    } else {
       $.foot.className = 'foot';
-      $.foot.textContent = `更新於 ${clock(lastOk)}，每 ${CFG.pollMs / 1000} 秒自動更新`;
+      $.foot.textContent = '';                         // 正常時不顯示，只在出錯時提示
     }
   }
 
