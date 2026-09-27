@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Claude 用量儀表
 // @namespace    https://github.com/RyanChen0311
-// @version      3.0.0
+// @version      3.0.1
 // @description  在 claude.ai 顯示 5 小時用量、重置倒數、消耗速度與暫停建議
 // @match        https://claude.ai/*
 // @run-at       document-idle
@@ -704,9 +704,13 @@
   function togglePopout() {
     if (popWin) { popWin.close(); restoreFromPopout(); return; }   // 已彈出：關閉視窗即回到網頁內
     if (focus) toggleFocus();
-    // 以整個螢幕可用範圍開啟；之後可用系統按鈕最大化或按 F11 全螢幕
-    const feat = `popup,left=${screen.availLeft || 0},top=${screen.availTop || 0},` +
-                 `width=${screen.availWidth},height=${screen.availHeight}`;
+    // 以面板目前在畫面上的大小開啟（width/height 指內容區），比例與大小都和原本一樣；
+    // 位置盡量對齊面板所在處，看起來像從原地彈出。之後仍可最大化或按 F11 全螢幕
+    const r = host.getBoundingClientRect();
+    const chromeX = Math.max(0, (outerWidth - innerWidth) / 2);   // 瀏覽器左側邊框
+    const chromeY = Math.max(0, outerHeight - innerHeight);       // 分頁列、網址列等上方介面
+    const feat = `popup,width=${Math.round(r.width)},height=${Math.round(r.height)},` +
+                 `left=${Math.round(screenX + chromeX + r.left)},top=${Math.round(screenY + chromeY + r.top)}`;
     const w = window.open('', 'claude-usage-gauge', feat);
     if (!w) {
       lastErr = '無法開啟獨立視窗：瀏覽器封鎖了彈出視窗，請允許 claude.ai 開啟彈出式視窗';
