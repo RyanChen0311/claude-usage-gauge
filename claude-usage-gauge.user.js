@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Claude 用量儀表
 // @namespace    https://github.com/RyanChen0311
-// @version      2.5.1
+// @version      2.5.2
 // @description  在 claude.ai 顯示 5 小時用量、重置倒數、消耗速度與暫停建議
 // @match        https://claude.ai/*
 // @run-at       document-idle
@@ -244,9 +244,9 @@
 
     header { display:flex; align-items:center; gap:8px; padding:12px 12px 10px 18px;
       border-bottom:1px solid rgba(255,255,255,.6); }
-    /* 整個面板都可以抓著拖曳；按鈕與縮放把手維持各自的游標 */
-    .panel, .pill { cursor:grab; user-select:none; -webkit-user-select:none; touch-action:none; }
-    .dragging .panel, .dragging .pill { cursor:grabbing; }
+    /* 平常維持一般游標；按住面板或膠囊時才變成抓握的手掌 */
+    .panel, .pill { cursor:default; user-select:none; -webkit-user-select:none; touch-action:none; }
+    .pressing .panel, .pressing .pill { cursor:grabbing; }
     .title { flex:1; font-size:14px; color:var(--dim); }
     button { font:inherit; font-size:14px; color:var(--ink); cursor:pointer; padding:6px 14px;
       background:rgba(255,255,255,.45); border:1px solid rgba(255,255,255,.85); border-radius:999px;
@@ -445,6 +445,7 @@
       const r = host.getBoundingClientRect();
       st = { px: e.clientX, py: e.clientY, left: r.left, top: r.top, moved: false, id: e.pointerId };
       el.setPointerCapture(e.pointerId);                // 游標移出元素也持續收到事件（小膠囊特別需要）
+      $.wrap.classList.add('pressing');                 // 按住即顯示手掌
     });
 
     el.addEventListener('pointermove', (e) => {
@@ -453,16 +454,15 @@
       if (!st.moved) {
         if (Math.hypot(dx, dy) < DRAG_THRESHOLD) return;
         st.moved = true;
-        $.wrap.classList.add('dragging');
       }
       place(st.left + dx, st.top + dy);                 // 新位置 = 面板起點 + 游標位移
     });
 
     const end = () => {
       if (!st) return;
+      $.wrap.classList.remove('pressing');
       if (st.moved) {
         suppressClick = true;                           // 拖曳結束後的那次 click 不算數
-        $.wrap.classList.remove('dragging');
         saveJSON(CFG.uiKey, ui);                        // 記住位置
       }
       st = null;
