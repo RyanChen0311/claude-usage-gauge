@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Claude 用量儀表
 // @namespace    https://github.com/RyanChen0311
-// @version      2.6.0
+// @version      2.7.0
 // @description  在 claude.ai 顯示 5 小時用量、重置倒數、消耗速度與暫停建議
 // @match        https://claude.ai/*
 // @run-at       document-idle
@@ -346,7 +346,11 @@
   $.collapse = h('button', { class: 'icon-btn', type: 'button', title: '收合', 'aria-label': '收合',
     onclick: () => setCollapsed(true) },
     icon('M5 12h14'));
-  $.header   = h('header', {}, h('div', { class: 'title' }, 'Claude 5 小時用量'), $.collapse);
+  $.close    = h('button', { class: 'icon-btn', type: 'button',
+    title: '關閉（重新整理頁面後再出現）', 'aria-label': '關閉面板',
+    onclick: () => closePanel() },
+    icon('M18 6 6 18', 'M6 6l12 12'));
+  $.header   = h('header', {}, h('div', { class: 'title' }, 'Claude 5 小時用量'), $.collapse, $.close);
   $.remain   = h('div', { class: 'big remain' }, '—');
   $.count    = h('div', { class: 'big count' }, '—');
   $.fill     = h('div', { class: 'fill' });
@@ -606,8 +610,9 @@
 
   // ---- 抓取流程 ----
   let busy = false;
+  let closed = false;                  // 按下關閉後設為 true，不再抓取資料
   async function refresh() {
-    if (busy) return;
+    if (busy || closed) return;
     busy = true;
     $.refresh.disabled = true;
     $.refresh.classList.add('busy');
@@ -632,9 +637,19 @@
 
   render();
   refresh();
-  setInterval(refresh, CFG.pollMs);
-  setInterval(render, 1000);
+  const pollTimer = setInterval(refresh, CFG.pollMs);
+  const renderTimer = setInterval(render, 1000);
   document.addEventListener('visibilitychange', () => {
     if (document.visibilityState === 'visible') refresh();
   });
+
+  // ---- 一鍵關閉：移除面板並停止所有更新，重新整理頁面後才會再出現 ----
+  // 不寫入 localStorage，所以下次載入時一切照舊
+  function closePanel() {
+    if (focus) toggleFocus();          // 先離開專注模式，還原網頁捲動與白色背景
+    closed = true;
+    clearInterval(pollTimer);
+    clearInterval(renderTimer);
+    host.remove();
+  }
 })();
