@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Claude 用量儀表
 // @namespace    https://github.com/RyanChen0311
-// @version      2.1.3
+// @version      2.1.4
 // @description  在 claude.ai 顯示 5 小時用量、重置倒數、消耗速度與暫停建議
 // @match        https://claude.ai/*
 // @run-at       document-idle
@@ -511,6 +511,7 @@
     $.vAvg.textContent = a.vAvg != null ? perMin(a.vAvg) : '—';
     $.vNow.dataset.level = rateLevel(a.vNow, a);
     $.vAvg.dataset.level = rateLevel(a.vAvg, a);
+    $.proj.dataset.level = rateLevel(a.vNow, a);   // 預估用完時間由目前速度推算，顏色跟著目前速度
     // 依目前實際速率（最近 15 分鐘）推算用完時刻，不考慮中途重置
     $.proj.textContent =
       a.state === 'out' ? '已用完'
