@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Claude 用量儀表
 // @namespace    https://github.com/RyanChen0311
-// @version      2.3.1
+// @version      2.3.2
 // @description  在 claude.ai 顯示 5 小時用量、重置倒數、消耗速度與暫停建議
 // @match        https://claude.ai/*
 // @run-at       document-idle
@@ -19,8 +19,7 @@
     pollMs: 60_000,        // 自動更新間隔
     rateWindowMin: 15,     // 即時速度：取最近 15 分鐘樣本
     minSpanMin: 3,         // 樣本跨度不足 3 分鐘時改用週期平均
-    warnPauseMin: 10,      // 建議暫停 < 10 分鐘 → 琥珀色「稍微放慢」
-    resetJitterMs: 5 * 60_000,
+    resetJitterMs: 5 * 60_000,  // 重置時間變動超過 5 分鐘（或用量下降）視為新週期，清空樣本
     // 進度條嚴重度配色（仿官方 設定 → 用量：藍 → 橘 → 紅）
     // 門檻與色碼尚未對照官方頁面確認，可依實際觀察修改
     bar: {
@@ -37,8 +36,8 @@
     },
     scaleMin: 0.6,         // 面板縮放下限
     scaleMax: 2.2,         // 面板縮放上限
-    storeKey: 'cug.samples',
-    uiKey: 'cug.ui',
+    storeKey: 'cug.samples',    // localStorage：用量取樣紀錄
+    uiKey: 'cug.ui',            // localStorage：位置、收合狀態、縮放倍率
   };
 
   // ================= 資料層 =================
@@ -126,16 +125,15 @@
     const v = vNow ?? vAvg ?? 0;
     const remain = Math.max(0, 100 - u);
     const vTarget = remain / r;                                // 剛好用完所需速度
-    const projected = u + v * r;                               // 照目前速度，重置時用到
 
     let pause = 0, state;
     if (u >= 100) state = 'out';
     else if (v <= 0) state = 'safe';
     else {
       pause = r - remain / v;                                  // P = r − (100 − u) / v
-      state = pause <= 0 ? 'safe' : pause < CFG.warnPauseMin ? 'warn' : 'danger';
+      state = pause <= 0 ? 'safe' : 'early';                   // early：照目前速率會在重置前耗盡
     }
-    return { u, r, vAvg, vNow, v, vTarget, remain, projected, pause: Math.max(0, pause), state };
+    return { u, r, vAvg, vNow, v, vTarget, remain, pause: Math.max(0, pause), state };
   }
 
   // ================= 格式化 =================
@@ -179,7 +177,7 @@
   // 暫停時間 P = r × (1 − 1/k)，所以 k > 1 ⇔ 需要暫停（黃），k > 1.5 ⇔ P > r/3（紅）
   function tierFor(a) {
     if (a.state === 'out') return 'r';
-    if (a.state === 'warn' || a.state === 'danger') return rateLevel(a.v, a);
+    if (a.state === 'early') return rateLevel(a.v, a);
     return 'n';
   }
 
@@ -197,7 +195,7 @@
         const drain = a.v > 0 ? `維持目前速率：約 ${fmtHM(a.remain / a.v)}耗盡用量`
                               : '維持目前速率：目前沒有消耗';
         // 只有照目前速率會在重置前耗盡時，才顯示等待重置的提醒
-        const early = a.state === 'warn' || a.state === 'danger';
+        const early = a.state === 'early';
         // 空等時間 = 距離重置 − 照目前速率的耗盡時間（等於建議暫停時間）
         const body = early ? `${drain}\n${waitLine(a.pause)}` : drain;
         // 不需要暫停時，不顯示「建議暫停」這一行
@@ -291,7 +289,7 @@
     .rates .v[data-level="y"] { color:var(--tier-y); }
     .rates .v[data-level="r"] { color:var(--tier-r); }
 
-    /* 建議區：純文字，標題依暫停時間分級上色 */
+    /* 建議區：純文字，標題依速率倍數 k 分級上色（與速率欄一致） */
     .advice { padding:6px 56px 14px 18px; color:var(--ink); }   /* 右側留位置給重新整理圖示 */
     .advice .head { font-size:24px; font-weight:700; transition:color .4s ease; }
     .advice .head:empty { display:none; }
@@ -357,7 +355,7 @@
   $.note     = h('div', { class: 'note' });
   $.foot     = h('div', { class: 'foot' }, '');
   $.advice   = h('div', { class: 'advice', 'data-tier': 'n' }, $.head, $.detail, $.note);
-  $.panel = h('div', { class: 'panel', 'data-state': 'idle' },
+  $.panel = h('div', { class: 'panel' },
     $.header,
     h('div', { class: 'stats' },
       h('div', {}, h('div', { class: 'label' }, '剩餘用量'), $.remain),
@@ -370,7 +368,7 @@
     $.advice,
     $.refresh,
     $.foot);
-  $.pill = h('button', { class: 'pill', type: 'button', 'data-state': 'idle',
+  $.pill = h('button', { class: 'pill', type: 'button',
     onclick: () => setCollapsed(false), 'aria-label': '展開用量面板' }, '—');
   $.wrap = h('div', { class: 'wrap' }, $.panel, $.pill);
 
@@ -462,7 +460,7 @@
   makeDraggable($.panel);
   makeDraggable($.pill);
 
-  // ---- 拖曳邊緣等比縮放 ----
+  // ---- 拖曳四角等比縮放 ----
   // 內容版面固定，因此寬高鎖定比例一起縮放，文字與數字跟著放大縮小
   (function enableResize() {
     for (const dir of ['ne', 'nw', 'se', 'sw']) {   // 只保留四個角
@@ -479,7 +477,7 @@
         const dx = e.clientX - st.x, dy = e.clientY - st.y;
         const fx = dir.includes('e') ? (st.w + dx) / st.w : dir.includes('w') ? (st.w - dx) / st.w : null;
         const fy = dir.includes('s') ? (st.h + dy) / st.h : dir.includes('n') ? (st.h - dy) / st.h : null;
-        // 角落取變化較大的一軸；邊緣只看該軸
+        // 取水平、垂直兩軸中變化較大的一軸
         const f = fx == null ? fy : fy == null ? fx : (Math.abs(fx - 1) > Math.abs(fy - 1) ? fx : fy);
         applyScale(st.s * f);
         const k = ui.scale / st.s;
@@ -507,13 +505,11 @@
   function render() {
     if (!samples.length) return;
     const a = analyze(Date.now());
-    $.panel.dataset.state = a.state;
-    $.pill.dataset.state = a.state;
 
     $.remain.textContent = pct(100 - a.u);
     const used = Math.min(100, Math.max(0, a.u));
     $.fill.style.width = `${used}%`;          // 進度條 = 已用量（同官方）
-    $.wrap.style.setProperty('--bar', barColor(used));   // 進度條、剩餘數字、膠囊共用
+    $.wrap.style.setProperty('--bar', barColor(used));   // 進度條、兩個大數字、膠囊共用
     $.advice.dataset.tier = tierFor(a);
     $.usedText.textContent = `已用 ${pct(a.u)}`;
     const resetTs = samples[samples.length - 1].r;
