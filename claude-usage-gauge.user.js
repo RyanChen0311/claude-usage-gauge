@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Claude 用量儀表
 // @namespace    https://github.com/RyanChen0311
-// @version      1.9.0
+// @version      2.0.0
 // @description  在 claude.ai 顯示 5 小時用量、重置倒數、消耗速度與暫停建議
 // @match        https://claude.ai/*
 // @run-at       document-idle
@@ -35,6 +35,8 @@
       warnK: 1.0,          // k > 1.0 → 黃：會提前耗盡
       critK: 1.5,          // k > 1.5 → 紅：剩餘時間還有 1/3 以上就會耗盡
     },
+    scaleMin: 0.6,         // 面板縮放下限
+    scaleMax: 2.2,         // 面板縮放上限
     storeKey: 'cug.samples',
     uiKey: 'cug.ui',
   };
@@ -232,6 +234,15 @@
       background:radial-gradient(closest-side, rgba(255,255,255,.65), rgba(180,225,255,.25) 55%, transparent);
       animation:drift 18s ease-in-out infinite alternate; }
     .panel > * { position:relative; z-index:1; }
+
+    /* 邊緣縮放把手（透明，只改變游標） */
+    .panel > .rz { position:absolute; z-index:3; touch-action:none; }
+    .rz.n, .rz.s { left:14px; right:14px; height:8px; cursor:ns-resize; }
+    .rz.e, .rz.w { top:14px; bottom:14px; width:8px; cursor:ew-resize; }
+    .rz.n { top:0; } .rz.s { bottom:0; } .rz.e { right:0; } .rz.w { left:0; }
+    .rz.ne, .rz.nw, .rz.se, .rz.sw { width:16px; height:16px; }
+    .rz.ne { top:0; right:0; cursor:nesw-resize; } .rz.sw { bottom:0; left:0; cursor:nesw-resize; }
+    .rz.nw { top:0; left:0; cursor:nwse-resize; }  .rz.se { bottom:0; right:0; cursor:nwse-resize; }
     @keyframes drift { to { transform:translate(220px, 260px) scale(1.15); } }
 
     header { display:flex; align-items:center; gap:8px; padding:12px 12px 10px 18px;
@@ -366,7 +377,13 @@
   document.body.append(host);
 
   // ---- 位置與收合狀態 ----
-  const ui = loadJSON(CFG.uiKey, { x: null, y: null, collapsed: false });
+  const ui = loadJSON(CFG.uiKey, { x: null, y: null, collapsed: false, scale: 1 });
+  const clampScale = (v) => Math.min(CFG.scaleMax, Math.max(CFG.scaleMin, v));
+  function applyScale(v) {
+    ui.scale = clampScale(v);
+    $.wrap.style.zoom = String(ui.scale);   // 等比縮放整個面板（含文字）
+  }
+  applyScale(Number(ui.scale) || 1);
   function place(x, y) {
     x = Math.min(Math.max(0, x), Math.max(0, innerWidth - host.offsetWidth));
     y = Math.min(Math.max(0, y), Math.max(0, innerHeight - host.offsetHeight));
@@ -399,6 +416,45 @@
       saveJSON(CFG.uiKey, ui);
     });
   })($.header);
+
+  // ---- 拖曳邊緣等比縮放 ----
+  // 內容版面固定，因此寬高鎖定比例一起縮放，文字與數字跟著放大縮小
+  (function enableResize() {
+    for (const dir of ['n', 's', 'e', 'w', 'ne', 'nw', 'se', 'sw']) {
+      const grip = h('div', { class: `rz ${dir}`, title: '拖曳調整大小，雙擊還原' });
+      let st = null;
+      grip.addEventListener('pointerdown', (e) => {
+        e.preventDefault();
+        const r = host.getBoundingClientRect();
+        st = { x: e.clientX, y: e.clientY, left: r.left, top: r.top, w: r.width, h: r.height, s: ui.scale };
+        grip.setPointerCapture(e.pointerId);
+      });
+      grip.addEventListener('pointermove', (e) => {
+        if (!st) return;
+        const dx = e.clientX - st.x, dy = e.clientY - st.y;
+        const fx = dir.includes('e') ? (st.w + dx) / st.w : dir.includes('w') ? (st.w - dx) / st.w : null;
+        const fy = dir.includes('s') ? (st.h + dy) / st.h : dir.includes('n') ? (st.h - dy) / st.h : null;
+        // 角落取變化較大的一軸；邊緣只看該軸
+        const f = fx == null ? fy : fy == null ? fx : (Math.abs(fx - 1) > Math.abs(fy - 1) ? fx : fy);
+        applyScale(st.s * f);
+        const k = ui.scale / st.s;
+        // 拖左邊或上邊時，固定對側邊緣不動
+        const left = dir.includes('w') ? st.left + st.w - st.w * k : st.left;
+        const top  = dir.includes('n') ? st.top + st.h - st.h * k : st.top;
+        place(left, top);
+      });
+      const end = () => { if (st) { st = null; saveJSON(CFG.uiKey, ui); } };
+      grip.addEventListener('pointerup', end);
+      grip.addEventListener('pointercancel', end);
+      grip.addEventListener('dblclick', () => {
+        const r = host.getBoundingClientRect();
+        applyScale(1);
+        place(r.left, r.top);
+        saveJSON(CFG.uiKey, ui);
+      });
+      $.panel.append(grip);
+    }
+  })();
 
   // ---- 每秒重繪 ----
   let lastOk = null, lastErr = null;
