@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Claude 用量儀表
 // @namespace    https://github.com/RyanChen0311
-// @version      1.7.0
+// @version      1.8.0
 // @description  在 claude.ai 顯示 5 小時用量、重置倒數、消耗速度與暫停建議
 // @match        https://claude.ai/*
 // @run-at       document-idle
@@ -29,6 +29,11 @@
       normal: '#2C84DB',
       warn:   '#E8861A',
       crit:   '#D93A3A',
+    },
+    // 速率分級：k = 實際速率 ÷ 目標速率（剛好在重置時用完的速率）
+    rate: {
+      warnK: 1.0,          // k > 1.0 → 黃：會提前耗盡
+      critK: 1.5,          // k > 1.5 → 紅：剩餘時間還有 1/3 以上就會耗盡
     },
     storeKey: 'cug.samples',
     uiKey: 'cug.ui',
@@ -156,6 +161,13 @@
   // 進度條顏色：依已用量套用嚴重度
   const barColor = (u) => (u >= CFG.bar.critAt ? CFG.bar.crit : u >= CFG.bar.warnAt ? CFG.bar.warn : CFG.bar.normal);
 
+  // 速率分級：正常不上色，只有過快才轉黃或紅
+  function rateLevel(v, a) {
+    if (v == null || a.r == null || !(a.r > 0) || a.state === 'out' || !(a.vTarget > 0)) return 'n';
+    const k = v / a.vTarget;
+    return k > CFG.rate.critK ? 'r' : k > CFG.rate.warnK ? 'y' : 'n';
+  }
+
   // 建議區標題分級：暫停 ≤20 分綠、20～40 分黃、>40 分紅
   function tierFor(a) {
     if (a.state === 'safe') return 'g';
@@ -251,7 +263,10 @@
       gap:8px; padding:12px 18px; }
     .rates .v { font-size:17px; white-space:nowrap;
       /* 數字與中文用同一套字型，避免混排時大小不一 */
-      font-family:"Microsoft JhengHei","PingFang TC","Noto Sans TC",sans-serif; font-weight:600; font-variant-numeric:tabular-nums; }
+      font-family:"Microsoft JhengHei","PingFang TC","Noto Sans TC",sans-serif; font-weight:600; font-variant-numeric:tabular-nums;
+      transition:color .4s ease; }
+    .rates .v[data-level="y"] { color:var(--tier-y); }
+    .rates .v[data-level="r"] { color:var(--tier-r); }
 
     /* 建議區：純文字，標題依暫停時間分級上色 */
     .advice { padding:6px 18px 14px; color:var(--ink); }
@@ -378,6 +393,8 @@
     $.count.textContent = a.r != null ? fmtHMS(a.r) : '—';
     $.vNow.textContent = a.r == null ? '—' : a.vNow != null ? perMin(a.vNow) : '取樣中';
     $.vAvg.textContent = a.vAvg != null ? perMin(a.vAvg) : '—';
+    $.vNow.dataset.level = rateLevel(a.vNow, a);
+    $.vAvg.dataset.level = rateLevel(a.vAvg, a);
     // 依目前實際速率（最近 15 分鐘）推算用完時刻，不考慮中途重置
     $.proj.textContent =
       a.state === 'out' ? '已用完'
