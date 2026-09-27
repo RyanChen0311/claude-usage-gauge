@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Claude 用量儀表
 // @namespace    https://github.com/RyanChen0311
-// @version      2.7.0
+// @version      2.8.0
 // @description  在 claude.ai 顯示 5 小時用量、重置倒數、消耗速度與暫停建議
 // @match        https://claude.ai/*
 // @run-at       document-idle
@@ -318,6 +318,10 @@
     .focus .panel { cursor:default; }
     .focus .panel > .rz { display:none; }
 
+    /* 子母畫面模式：視窗由系統移動與縮放，面板內的拖曳、四角縮放、收合都不需要 */
+    .pip .panel { cursor:default; }
+    .pip .panel > .rz, .pip .collapse-btn { display:none; }
+
     @media (prefers-reduced-motion: reduce) {
       .panel::before { animation:none; }
       .remain, .advice .head { transition:none; }
@@ -343,14 +347,22 @@
   $.refresh  = h('button', { class: 'icon-btn corner-refresh', type: 'button', title: '重新整理', 'aria-label': '重新整理',
     onclick: () => refresh() },
     icon('M21 12a9 9 0 1 1-9-9c2.52 0 4.93 1 6.74 2.74L21 8', 'M21 3v5h-5'));
-  $.collapse = h('button', { class: 'icon-btn', type: 'button', title: '收合', 'aria-label': '收合',
+  $.collapse = h('button', { class: 'icon-btn collapse-btn', type: 'button', title: '收合', 'aria-label': '收合',
     onclick: () => setCollapsed(true) },
     icon('M5 12h14'));
   $.close    = h('button', { class: 'icon-btn', type: 'button',
     title: '關閉（重新整理頁面後再出現）', 'aria-label': '關閉面板',
     onclick: () => closePanel() },
     icon('M18 6 6 18', 'M6 6l12 12'));
-  $.header   = h('header', {}, h('div', { class: 'title' }, 'Claude 5 小時用量'), $.collapse, $.close);
+  // 彈出成獨立視窗（Document Picture-in-Picture）；瀏覽器不支援時不顯示
+  $.popout   = h('button', { class: 'icon-btn', type: 'button',
+    title: '彈出成獨立視窗（可移到螢幕任何位置）', 'aria-label': '彈出成獨立視窗',
+    onclick: () => togglePip() },
+    icon('M21 9V6a2 2 0 0 0-2-2H4a2 2 0 0 0-2 2v10c0 1.1.9 2 2 2h4',
+         'M14 13h6a2 2 0 0 1 2 2v3a2 2 0 0 1-2 2h-6a2 2 0 0 1-2-2v-3a2 2 0 0 1 2-2z'));
+  if (!('documentPictureInPicture' in window)) $.popout.style.display = 'none';
+  $.header   = h('header', {}, h('div', { class: 'title' }, 'Claude 5 小時用量'),
+    $.popout, $.collapse, $.close);
   $.remain   = h('div', { class: 'big remain' }, '—');
   $.count    = h('div', { class: 'big count' }, '—');
   $.fill     = h('div', { class: 'fill' });
@@ -394,6 +406,7 @@
   // ---- 位置與收合狀態 ----
   const ui = loadJSON(CFG.uiKey, { x: null, y: null, collapsed: false, scale: 1 });
   let focus = null;   // 專注模式狀態：null 代表一般模式；否則記錄進入前的位置與網頁捲動設定
+  let pipWin = null;  // 子母畫面視窗；null 代表面板在網頁內
   // 縮放上限 = 目前面板在 1 倍時的尺寸，放大到碰到視窗寬或高為止
   function fitScale() {
     const r = host.getBoundingClientRect();
@@ -424,6 +437,7 @@
   // 面板實際尺寸一有變化（收合↔展開、縮放、文字行數增減、視窗縮小），
   // 就用目前的實際位置重新夾一次邊界，確保永遠留在可視範圍內
   function keepInView() {
+    if (pipWin) { fitPip(); return; }                  // 子母畫面：依視窗大小重新縮放
     if (focus) { fitCenter(); return; }                // 專注模式：重新填滿並置中
     if (!ui.collapsed && ui.scale > fitScale() + 1e-3) applyScale(ui.scale);  // 視窗變小時先縮到放得下
     const r = host.getBoundingClientRect();
@@ -444,7 +458,7 @@
     let suppressClick = false;
 
     el.addEventListener('pointerdown', (e) => {
-      if (e.button !== 0 || focus) return;              // 只接受主要按鍵；專注模式不能拖曳
+      if (e.button !== 0 || focus || pipWin) return;    // 只接受主要按鍵；專注模式與子母畫面不能拖曳
       if (el === $.panel && e.target.closest('button, .rz')) return;  // 按鈕與縮放把手不觸發拖曳
       const r = host.getBoundingClientRect();
       st = { px: e.clientX, py: e.clientY, left: r.left, top: r.top, moved: false, id: e.pointerId };
@@ -515,7 +529,7 @@
   $.header.title = '雙擊面板：填滿畫面／還原（Esc 也可還原）';
   // 雙擊面板任何位置都能切換；按鈕與四角縮放把手除外（四角雙擊是還原 1 倍）
   $.panel.addEventListener('dblclick', (e) => {
-    if (e.target.closest('button, .rz')) return;
+    if (pipWin || e.target.closest('button, .rz')) return;
     toggleFocus();
   });
   document.addEventListener('keydown', (e) => {
@@ -643,6 +657,66 @@
     if (document.visibilityState === 'visible') refresh();
   });
 
+  // ---- 子母畫面：把整個面板搬到永遠置頂的獨立視窗 ----
+  // 面板的畫面與樣式都在 Shadow DOM 內，搬動 host 即可整塊帶走；
+  // 抓取與計算仍在 claude.ai 分頁執行，所以登入狀態不受影響。
+  let pipTimer = null;
+
+  // 依子母畫面視窗大小，把面板等比縮放到剛好填滿（不影響網頁內記住的倍率）
+  function fitPip() {
+    if (!pipWin) return;
+    const z = Number($.wrap.style.zoom) || 1;
+    const r = $.panel.getBoundingClientRect();
+    if (!r.width || !r.height) return;
+    const s = Math.min(pipWin.innerWidth / (r.width / z), pipWin.innerHeight / (r.height / z));
+    $.wrap.style.zoom = String(s);
+  }
+
+  async function togglePip() {
+    if (pipWin) { pipWin.close(); return; }            // 已彈出：關閉視窗即回到網頁內
+    if (focus) toggleFocus();
+    const r = host.getBoundingClientRect();
+    let w;
+    try {
+      w = await window.documentPictureInPicture.requestWindow({
+        width: Math.round(r.width), height: Math.round(r.height),
+      });
+    } catch (e) {
+      lastErr = `無法開啟獨立視窗：${e.message || e}`;
+      renderFoot();
+      return;
+    }
+    pipWin = w;
+    const body = w.document.body;
+    body.style.cssText = 'margin:0;height:100vh;display:flex;align-items:center;justify-content:center;' +
+      'overflow:hidden;background:linear-gradient(135deg,#F4F8FC,#DCE8F4);';
+    host.style.cssText = 'position:static;';
+    body.append(host);                                 // 跨文件搬移，事件與 Shadow DOM 一併帶走
+    $.wrap.classList.add('pip');
+    $.popout.title = '回到網頁內';
+    $.popout.setAttribute('aria-label', '回到網頁內');
+    fitPip();
+    w.addEventListener('resize', fitPip);
+    // 分頁在背景時主視窗的計時器會被節流；改用子母畫面視窗的計時器讓倒數每秒更新
+    pipTimer = w.setInterval(render, 1000);
+
+    // 視窗被關閉（按 ×、返回分頁、或分頁重新整理）時，把面板搬回網頁
+    w.addEventListener('pagehide', () => {
+      w.clearInterval(pipTimer);
+      pipTimer = null;
+      pipWin = null;
+      $.wrap.classList.remove('pip');
+      $.popout.title = '彈出成獨立視窗（可移到螢幕任何位置）';
+      $.popout.setAttribute('aria-label', '彈出成獨立視窗');
+      if (closed) return;
+      host.style.cssText = 'position:fixed;z-index:2147483000;top:72px;right:16px;';
+      document.body.append(host);
+      $.wrap.style.zoom = String(ui.scale);            // 恢復網頁內的倍率
+      if (ui.x != null) place(ui.x, ui.y);
+      keepInView();
+    });
+  }
+
   // ---- 一鍵關閉：移除面板並停止所有更新，重新整理頁面後才會再出現 ----
   // 不寫入 localStorage，所以下次載入時一切照舊
   function closePanel() {
@@ -650,6 +724,7 @@
     closed = true;
     clearInterval(pollTimer);
     clearInterval(renderTimer);
+    if (pipWin) pipWin.close();        // pagehide 會看到 closed，不再把面板搬回網頁
     host.remove();
   }
 })();
