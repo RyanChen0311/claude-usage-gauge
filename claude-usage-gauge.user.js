@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Claude 用量儀表
 // @namespace    https://github.com/RyanChen0311
-// @version      1.3.1
+// @version      1.3.2
 // @description  在 claude.ai 顯示 5 小時用量、重置倒數、消耗速度與暫停建議
 // @match        https://claude.ai/*
 // @run-at       document-idle
@@ -242,12 +242,7 @@
       box-shadow:inset 0 2px 4px rgba(12,35,64,.18), inset 0 -1px 0 rgba(255,255,255,.85); }
     .fill { position:relative; height:100%; width:0; border-radius:999px; overflow:hidden;
       background:var(--bar, #2C84DB);
-      box-shadow:inset 0 2px 3px rgba(255,255,255,.6);
-      transition:width .8s cubic-bezier(.2,.8,.2,1), background .6s ease; }
-    .fill::after { content:""; position:absolute; top:0; bottom:0; left:-40%; width:40%;
-      background:linear-gradient(90deg, transparent, rgba(255,255,255,.65), transparent);
-      animation:flow 2.6s ease-in-out infinite; }
-    @keyframes flow { to { transform:translateX(350%); } }
+      box-shadow:inset 0 2px 3px rgba(255,255,255,.6); }
     .used { margin-top:6px; font-size:14px; color:var(--dim); font-variant-numeric:tabular-nums; }
 
     .rates { display:grid; grid-template-columns:repeat(3,1fr); gap:8px; padding:12px 18px; }
@@ -278,8 +273,8 @@
     .collapsed .pill { display:inline-block; }
 
     @media (prefers-reduced-motion: reduce) {
-      .panel::before, .fill::after { animation:none; }
-      .fill, .remain, .advice .head { transition:none; }
+      .panel::before { animation:none; }
+      .remain, .advice .head { transition:none; }
     }
   `;
 
