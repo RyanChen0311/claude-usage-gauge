@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Claude 用量儀表
 // @namespace    https://github.com/RyanChen0311
-// @version      2.1.0
+// @version      2.1.1
 // @description  在 claude.ai 顯示 5 小時用量、重置倒數、消耗速度與暫停建議
 // @match        https://claude.ai/*
 // @run-at       document-idle
@@ -235,12 +235,8 @@
       animation:drift 18s ease-in-out infinite alternate; }
     .panel > * { position:relative; z-index:1; }
 
-    /* 邊緣縮放把手（透明，只改變游標） */
-    .panel > .rz { position:absolute; z-index:3; touch-action:none; }
-    .rz.n, .rz.s { left:14px; right:14px; height:8px; cursor:ns-resize; }
-    .rz.e, .rz.w { top:14px; bottom:14px; width:8px; cursor:ew-resize; }
-    .rz.n { top:0; } .rz.s { bottom:0; } .rz.e { right:0; } .rz.w { left:0; }
-    .rz.ne, .rz.nw, .rz.se, .rz.sw { width:16px; height:16px; }
+    /* 四個角的縮放把手（透明，只改變游標） */
+    .panel > .rz { position:absolute; z-index:3; touch-action:none; width:18px; height:18px; }
     .rz.ne { top:0; right:0; cursor:nesw-resize; } .rz.sw { bottom:0; left:0; cursor:nesw-resize; }
     .rz.nw { top:0; left:0; cursor:nwse-resize; }  .rz.se { bottom:0; right:0; cursor:nwse-resize; }
     @keyframes drift { to { transform:translate(220px, 260px) scale(1.15); } }
@@ -451,7 +447,7 @@
   // ---- 拖曳邊緣等比縮放 ----
   // 內容版面固定，因此寬高鎖定比例一起縮放，文字與數字跟著放大縮小
   (function enableResize() {
-    for (const dir of ['n', 's', 'e', 'w', 'ne', 'nw', 'se', 'sw']) {
+    for (const dir of ['ne', 'nw', 'se', 'sw']) {   // 只保留四個角
       const grip = h('div', { class: `rz ${dir}`, title: '拖曳調整大小，雙擊還原' });
       let st = null;
       grip.addEventListener('pointerdown', (e) => {
