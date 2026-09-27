@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Claude 用量儀表
 // @namespace    https://github.com/RyanChen0311
-// @version      1.6.0
+// @version      1.6.1
 // @description  在 claude.ai 顯示 5 小時用量、重置倒數、消耗速度與暫停建議
 // @match        https://claude.ai/*
 // @run-at       document-idle
@@ -231,9 +231,6 @@
     button { font:inherit; font-size:14px; color:var(--ink); cursor:pointer; padding:6px 14px;
       background:rgba(255,255,255,.45); border:1px solid rgba(255,255,255,.85); border-radius:999px;
       box-shadow:inset 0 1px 0 rgba(255,255,255,.9), 0 2px 6px rgba(12,35,64,.10); }
-    button.primary { color:#fff; font-weight:600; border-color:rgba(255,255,255,.7);
-      background:linear-gradient(180deg, rgba(110,195,255,.95), rgba(30,130,225,.95));
-      box-shadow:inset 0 1px 0 rgba(255,255,255,.65), 0 4px 12px rgba(30,130,225,.35); }
     button:disabled { opacity:.6; cursor:progress; }
     button:focus-visible { outline:2px solid #2A8BE0; outline-offset:2px; }
 
@@ -251,7 +248,9 @@
     .used { margin-top:6px; font-size:14px; color:var(--dim); font-variant-numeric:tabular-nums; }
 
     .rates { display:grid; grid-template-columns:repeat(3,1fr); gap:8px; padding:12px 18px; }
-    .rates .v { font-size:17px; white-space:nowrap; font-weight:600; font-variant-numeric:tabular-nums; }
+    .rates .v { font-size:17px; white-space:nowrap;
+      /* 數字與中文用同一套字型，避免混排時大小不一 */
+      font-family:"Microsoft JhengHei","PingFang TC","Noto Sans TC",sans-serif; font-weight:600; font-variant-numeric:tabular-nums; }
 
     /* 建議區：純文字，標題依暫停時間分級上色 */
     .advice { padding:6px 18px 14px; color:var(--ink); }
@@ -282,7 +281,7 @@
   `;
 
   const $ = {};
-  $.refresh  = h('button', { class: 'primary', type: 'button', onclick: () => refresh() }, '重新整理');
+  $.refresh  = h('button', { type: 'button', onclick: () => refresh() }, '重新整理');
   $.collapse = h('button', { type: 'button', onclick: () => setCollapsed(true) }, '收合');
   $.header   = h('header', {}, h('div', { class: 'title' }, 'Claude 5 小時用量'), $.refresh, $.collapse);
   $.remain   = h('div', { class: 'big remain' }, '—');
