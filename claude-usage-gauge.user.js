@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Claude 用量儀表
 // @namespace    https://github.com/RyanChen0311
-// @version      1.6.2
+// @version      1.7.0
 // @description  在 claude.ai 顯示 5 小時用量、重置倒數、消耗速度與暫停建議
 // @match        https://claude.ai/*
 // @run-at       document-idle
@@ -243,7 +243,9 @@
     .bar { padding:10px 18px 4px; }
     .track { height:8px; border-radius:999px; overflow:hidden; background:rgba(12,35,64,.10); }
     .fill { height:100%; width:0; border-radius:999px; background:var(--bar, #2C84DB); }
-    .used { margin-top:6px; font-size:14px; color:var(--dim); font-variant-numeric:tabular-nums; }
+    .used { display:flex; justify-content:space-between; gap:8px; margin-top:6px;
+      font-size:14px; color:var(--dim); white-space:nowrap;
+      font-family:"Microsoft JhengHei","PingFang TC","Noto Sans TC",sans-serif; }
 
     .rates { display:grid; grid-template-columns:auto auto auto; justify-content:space-between;
       gap:8px; padding:12px 18px; }
@@ -286,7 +288,9 @@
   $.remain   = h('div', { class: 'big remain' }, '—');
   $.count    = h('div', { class: 'big count' }, '—');
   $.fill     = h('div', { class: 'fill' });
-  $.used     = h('div', { class: 'used' }, '已用 —');
+  $.usedText = h('span', {}, '已用 —');
+  $.resetAt  = h('span', {}, '');
+  $.used     = h('div', { class: 'used' }, $.usedText, $.resetAt);
   $.vNow     = h('div', { class: 'v' }, '—');
   $.vAvg     = h('div', { class: 'v' }, '—');
   $.proj     = h('div', { class: 'v' }, '—');
@@ -368,7 +372,9 @@
     $.fill.style.width = `${used}%`;          // 進度條 = 已用量（同官方）
     $.wrap.style.setProperty('--bar', barColor(used));   // 進度條、剩餘數字、膠囊共用
     $.advice.dataset.tier = tierFor(a);
-    $.used.textContent = `已用 ${pct(a.u)}`;
+    $.usedText.textContent = `已用 ${pct(a.u)}`;
+    const resetTs = samples[samples.length - 1].r;
+    $.resetAt.textContent = resetTs && a.state !== 'rolled' ? `重置時間 ${etaText(resetTs)}` : '';
     $.count.textContent = a.r != null ? fmtHMS(a.r) : '—';
     $.vNow.textContent = a.r == null ? '—' : a.vNow != null ? perMin(a.vNow) : '取樣中';
     $.vAvg.textContent = a.vAvg != null ? perMin(a.vAvg) : '—';
