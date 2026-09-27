@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Claude 用量儀表
 // @namespace    https://github.com/RyanChen0311
-// @version      1.1.0
+// @version      1.2.0
 // @description  在 claude.ai 顯示 5 小時用量、重置倒數、消耗速度與暫停建議
 // @match        https://claude.ai/*
 // @run-at       document-idle
@@ -124,17 +124,19 @@
 
   // ================= 格式化 =================
   const pct = (x) => `${Math.round(Math.min(999, Math.max(0, x)))}%`;
-  const perHour = (v) => `${(v * 60).toFixed(1)}%/時`;
+  // 每分鐘消耗百分比：0.5 → 「每分鐘 0.5%」，0.08 → 「每分鐘 0.08%」
+  const perMin = (v) => `每分鐘 ${String(Number(v.toFixed(2)))}%`;
   const pad = (n) => String(n).padStart(2, '0');
   const fmtHMS = (min) => {
     const s = Math.max(0, Math.floor(min * 60));
     return `${Math.floor(s / 3600)}:${pad(Math.floor((s % 3600) / 60))}:${pad(s % 60)}`;
   };
-  const fmtDur = (min) => {
-    const m = Math.ceil(min);
-    if (m < 60) return `${m} 分鐘`;
-    return `${Math.floor(m / 60)} 小時 ${m % 60} 分`;
+  // 「X 小時 XX 分」
+  const fmtHM = (min) => {
+    const m = Math.max(0, Math.ceil(min));
+    return `${Math.floor(m / 60)} 小時 ${pad(m % 60)} 分`;
   };
+  const waitLine = (r) => `仍需等待 ${Math.max(0, Math.ceil(r))} 分後重置`;
   const clock = (t) => new Date(t).toLocaleTimeString('zh-TW', { hour12: false });
 
   // 剩餘比例 → 色相：100% 綠(145) → 50% 黃(48) → 0% 紅(0)
@@ -150,6 +152,7 @@
     return 'n';
   }
 
+  // 回傳 [標題, 內文（多行）, 附註]
   function advice(a) {
     const note = a.vNow == null && a.r != null ? '即時速度需累積 3 分鐘樣本，目前以週期平均估算。' : '';
     switch (a.state) {
@@ -158,19 +161,15 @@
       case 'rolled':
         return ['上個週期已結束', '按「重新整理」取得新週期的資料。', ''];
       case 'out':
-        return ['額度已用完', `再等 ${fmtDur(a.r)} 就會重置。`, ''];
-      case 'safe':
-        return ['節奏剛好，照常使用',
-          `照目前速度，重置時約用到 ${pct(a.projected)}。`, note];
-      case 'warn':
-        return [`建議暫停 ${fmtDur(a.pause)}`,
-          `暫停約 ${fmtDur(a.pause)}，或把速度降到 ${perHour(a.vTarget)} 以下。`, note];
-      default:
-        return [`建議暫停 ${fmtDur(a.pause)}`,
-          `照目前速度約 ${fmtDur(a.remain / a.v)} 後用完，比重置早 ${fmtDur(a.pause)}。` +
-          `暫停後可恢復原速，或全程降到 ${perHour(a.vTarget)}。`, note];
+        return ['額度已用完', waitLine(a.r), ''];
+      default: {
+        const drain = a.v > 0 ? `維持目前速率：約 ${fmtHM(a.remain / a.v)}耗盡用量`
+                              : '維持目前速率：目前沒有消耗';
+        return [`建議暫停：${fmtHM(a.pause)}`, `${drain}\n${waitLine(a.r)}`, note];
+      }
     }
   }
+
 
   // ================= 呈現層 =================
   function h(tag, attrs = {}, ...kids) {
@@ -240,7 +239,7 @@
     .used { margin-top:6px; font-size:14px; color:var(--dim); font-variant-numeric:tabular-nums; }
 
     .rates { display:grid; grid-template-columns:repeat(3,1fr); gap:8px; padding:12px 18px; }
-    .rates .v { font-size:20px; font-weight:600; font-variant-numeric:tabular-nums; }
+    .rates .v { font-size:17px; white-space:nowrap; font-weight:600; font-variant-numeric:tabular-nums; }
 
     /* 建議區：白色水滴卡片，標題依暫停時間分級上色 */
     .advice { margin:4px 12px 14px; padding:14px 16px; border-radius:18px; color:var(--ink);
@@ -250,7 +249,8 @@
     .advice[data-tier="g"] .head { color:var(--tier-g); }
     .advice[data-tier="y"] .head { color:var(--tier-y); }
     .advice[data-tier="r"] .head { color:var(--tier-r); }
-    .advice .detail { font-size:15px; line-height:1.5; margin-top:4px; }
+    .advice .detail { font-size:16px; line-height:1.6; margin-top:6px; white-space:pre-line;
+      font-variant-numeric:tabular-nums; }
     .advice .note { font-size:12px; color:var(--dim); margin-top:6px; }
     .advice .note:empty { display:none; }
     .foot { padding:0 18px 14px; font-size:12px; color:var(--dim); }
@@ -362,8 +362,8 @@
     $.advice.dataset.tier = tierFor(a);
     $.used.textContent = `已用 ${pct(a.u)}`;
     $.count.textContent = a.r != null ? fmtHMS(a.r) : '—';
-    $.vNow.textContent = a.r == null ? '—' : a.vNow != null ? perHour(a.vNow) : '取樣中';
-    $.vAvg.textContent = a.vAvg != null ? perHour(a.vAvg) : '—';
+    $.vNow.textContent = a.r == null ? '—' : a.vNow != null ? perMin(a.vNow) : '取樣中';
+    $.vAvg.textContent = a.vAvg != null ? perMin(a.vAvg) : '—';
     $.proj.textContent = a.r != null ? pct(a.projected) : '—';
 
     const [head, detail, note] = advice(a);
