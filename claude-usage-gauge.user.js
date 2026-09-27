@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Claude 用量儀表
 // @namespace    https://github.com/RyanChen0311
-// @version      2.8.1
+// @version      2.9.0
 // @description  在 claude.ai 顯示 5 小時用量、重置倒數、消耗速度與暫停建議
 // @match        https://claude.ai/*
 // @run-at       document-idle
@@ -319,7 +319,11 @@
     .focus .panel > .rz { display:none; }
 
     /* 子母畫面模式：視窗由系統移動與縮放，面板內的拖曳、四角縮放、收合都不需要 */
-    .pip .panel { cursor:default; }
+    .pip .panel { cursor:default; max-width:none; border:0; border-radius:0; box-shadow:none;
+      display:flex; flex-direction:column; }
+    /* 面板填滿視窗後，多出的高度平均分配在內容上下，標題列固定在頂端 */
+    .pip .panel > .stats { margin-top:auto; }
+    .pip .panel > .advice { margin-bottom:auto; }
     .pip .panel > .rz, .pip .collapse-btn { display:none; }
 
     @media (prefers-reduced-motion: reduce) {
@@ -662,14 +666,21 @@
   // 抓取與計算仍在 claude.ai 分頁執行，所以登入狀態不受影響。
   let pipTimer = null;
 
-  // 依子母畫面視窗大小，把面板等比縮放到剛好填滿（不影響網頁內記住的倍率）
+  // 子母畫面：面板外框與視窗一樣大，內容則等比放大到放得下為止
+  // 1. 先還原成 1 倍、自然寬高，量出內容本身需要的尺寸
+  // 2. 取寬、高兩個方向中較小的放大倍率套用到內容（文字不變形）
+  // 3. 再把面板寬高設成「視窗尺寸 ÷ 倍率」，放大後剛好等於視窗
   function fitPip() {
     if (!pipWin) return;
-    const z = Number($.wrap.style.zoom) || 1;
+    const W = pipWin.innerWidth, H = pipWin.innerHeight;
+    $.panel.style.width = ''; $.panel.style.height = '';
+    $.wrap.style.zoom = '1';
     const r = $.panel.getBoundingClientRect();
     if (!r.width || !r.height) return;
-    const s = Math.min(pipWin.innerWidth / (r.width / z), pipWin.innerHeight / (r.height / z));
+    const s = Math.min(W / r.width, H / r.height);
     $.wrap.style.zoom = String(s);
+    $.panel.style.width = `${W / s}px`;
+    $.panel.style.height = `${H / s}px`;
   }
 
   async function togglePip() {
@@ -689,8 +700,7 @@
     }
     pipWin = w;
     const body = w.document.body;
-    body.style.cssText = 'margin:0;height:100vh;display:flex;align-items:center;justify-content:center;' +
-      'overflow:hidden;background:linear-gradient(135deg,#F4F8FC,#DCE8F4);';
+    body.style.cssText = 'margin:0;height:100vh;overflow:hidden;background:#EAF2FA;';
     host.style.cssText = 'position:static;';
     body.append(host);                                 // 跨文件搬移，事件與 Shadow DOM 一併帶走
     $.wrap.classList.add('pip');
@@ -707,6 +717,7 @@
       pipTimer = null;
       pipWin = null;
       $.wrap.classList.remove('pip');
+      $.panel.style.width = ''; $.panel.style.height = '';   // 取消填滿視窗的尺寸
       $.popout.title = '彈出成獨立視窗（可移到螢幕任何位置）';
       $.popout.setAttribute('aria-label', '彈出成獨立視窗');
       if (closed) return;
