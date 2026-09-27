@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Claude 用量儀表
 // @namespace    https://github.com/RyanChen0311
-// @version      1.0.0
+// @version      1.1.0
 // @description  在 claude.ai 顯示 5 小時用量、重置倒數、消耗速度與暫停建議
 // @match        https://claude.ai/*
 // @run-at       document-idle
@@ -137,6 +137,19 @@
   };
   const clock = (t) => new Date(t).toLocaleTimeString('zh-TW', { hour12: false });
 
+  // 剩餘比例 → 色相：100% 綠(145) → 50% 黃(48) → 0% 紅(0)
+  const hueFor = (p) => (p >= 0.5 ? 48 + ((p - 0.5) / 0.5) * 97 : (p / 0.5) * 48).toFixed(0);
+
+  // 建議區標題分級：暫停 ≤20 分綠、20～40 分黃、>40 分紅
+  function tierFor(a) {
+    if (a.state === 'safe') return 'g';
+    if (a.state === 'out') return 'r';
+    if (a.state === 'warn' || a.state === 'danger') {
+      return a.pause <= 20 ? 'g' : a.pause <= 40 ? 'y' : 'r';
+    }
+    return 'n';
+  }
+
   function advice(a) {
     const note = a.vNow == null && a.r != null ? '即時速度需累積 3 分鐘樣本，目前以週期平均估算。' : '';
     switch (a.state) {
@@ -150,7 +163,7 @@
         return ['節奏剛好，照常使用',
           `照目前速度，重置時約用到 ${pct(a.projected)}。`, note];
       case 'warn':
-        return ['稍微放慢',
+        return [`建議暫停 ${fmtDur(a.pause)}`,
           `暫停約 ${fmtDur(a.pause)}，或把速度降到 ${perHour(a.vTarget)} 以下。`, note];
       default:
         return [`建議暫停 ${fmtDur(a.pause)}`,
@@ -173,50 +186,89 @@
 
   const CSS = `
     :host { all: initial;
-      --ink:#EAF1F7; --dim:#8FA3B5; --line:#2C4154; --panel:#1B2B3A; --track:#0F1A24;
-      --safe:#34C58A; --warn:#F0B23A; --danger:#EF5B5B; --idle:#8FA3B5; --on-state:#0E1A24; }
+      --ink:#0C2340; --dim:#4A6480; --h:145;
+      --tier-g:#1E9E63; --tier-y:#C98A00; --tier-r:#D93A3A; }
     * { box-sizing:border-box; }
     .wrap { font-family:"Bahnschrift","DIN Alternate","Segoe UI","Microsoft JhengHei","PingFang TC",sans-serif; }
-    .panel { --state:var(--idle); width:400px; max-width:calc(100vw - 24px); background:var(--panel);
-      color:var(--ink); border:1px solid var(--line); border-radius:14px; overflow:hidden;
-      box-shadow:0 12px 32px rgba(8,16,24,.45); }
-    [data-state="safe"]   { --state:var(--safe); }
-    [data-state="warn"]   { --state:var(--warn); }
-    [data-state="danger"],[data-state="out"] { --state:var(--danger); }
-    header { display:flex; align-items:center; gap:8px; padding:10px 12px 10px 16px;
-      border-bottom:1px solid var(--line); cursor:grab; user-select:none; touch-action:none; }
+
+    /* 水滴玻璃面板 */
+    .panel { position:relative; width:400px; max-width:calc(100vw - 24px); color:var(--ink);
+      background:linear-gradient(135deg, rgba(255,255,255,.74), rgba(214,236,255,.46));
+      -webkit-backdrop-filter:blur(22px) saturate(180%); backdrop-filter:blur(22px) saturate(180%);
+      border:1px solid rgba(255,255,255,.75); border-radius:24px; overflow:hidden;
+      box-shadow:0 18px 40px rgba(12,35,64,.22), inset 0 1px 0 rgba(255,255,255,.95),
+                 inset 0 -12px 30px rgba(120,190,255,.20); }
+    .panel::before { content:""; position:absolute; width:320px; height:320px; top:-160px; left:-80px;
+      border-radius:50%; pointer-events:none;
+      background:radial-gradient(closest-side, rgba(255,255,255,.65), rgba(180,225,255,.25) 55%, transparent);
+      animation:drift 18s ease-in-out infinite alternate; }
+    .panel > * { position:relative; z-index:1; }
+    @keyframes drift { to { transform:translate(220px, 260px) scale(1.15); } }
+
+    header { display:flex; align-items:center; gap:8px; padding:12px 12px 10px 18px;
+      border-bottom:1px solid rgba(255,255,255,.6); cursor:grab; user-select:none; touch-action:none; }
     header:active { cursor:grabbing; }
     .title { flex:1; font-size:14px; color:var(--dim); }
-    button { font:inherit; font-size:14px; color:var(--ink); background:transparent;
-      border:1px solid #3A536A; border-radius:8px; padding:6px 12px; cursor:pointer; }
-    button.primary { background:var(--ink); color:#14202B; border-color:var(--ink); font-weight:600; }
+    button { font:inherit; font-size:14px; color:var(--ink); cursor:pointer; padding:6px 14px;
+      background:rgba(255,255,255,.45); border:1px solid rgba(255,255,255,.85); border-radius:999px;
+      box-shadow:inset 0 1px 0 rgba(255,255,255,.9), 0 2px 6px rgba(12,35,64,.10); }
+    button.primary { color:#fff; font-weight:600; border-color:rgba(255,255,255,.7);
+      background:linear-gradient(180deg, rgba(110,195,255,.95), rgba(30,130,225,.95));
+      box-shadow:inset 0 1px 0 rgba(255,255,255,.65), 0 4px 12px rgba(30,130,225,.35); }
     button:disabled { opacity:.6; cursor:progress; }
-    button:focus-visible { outline:2px solid #7FC4FF; outline-offset:2px; }
-    .stats { display:grid; grid-template-columns:1fr 1fr; gap:12px; padding:18px 16px 8px; }
+    button:focus-visible { outline:2px solid #2A8BE0; outline-offset:2px; }
+
+    .stats { display:grid; grid-template-columns:1fr 1fr; gap:12px; padding:18px 18px 8px; }
     .label { font-size:13px; color:var(--dim); margin-bottom:6px; }
-    .big { font-size:60px; font-weight:600; line-height:1; font-variant-numeric:tabular-nums; }
-    .remain { color:var(--state); }
+    .big { font-size:60px; font-weight:600; line-height:1; font-variant-numeric:tabular-nums;
+      text-shadow:0 1px 0 rgba(255,255,255,.8); }
+    .remain { color:hsl(var(--h) 80% 36%); transition:color .6s ease; }
     .count { font-size:44px; line-height:60px; }
-    .bar { padding:8px 16px 4px; }
-    .track { height:12px; background:var(--track); border-radius:6px; overflow:hidden; }
-    .fill { height:100%; width:0; background:var(--state); transition:width .4s ease; }
+
+    /* 玻璃管 + 流動液體 */
+    .bar { padding:8px 18px 4px; }
+    .track { height:16px; border-radius:999px; overflow:hidden; background:rgba(255,255,255,.35);
+      box-shadow:inset 0 2px 4px rgba(12,35,64,.18), inset 0 -1px 0 rgba(255,255,255,.85); }
+    .fill { position:relative; height:100%; width:0; border-radius:999px; overflow:hidden;
+      background:linear-gradient(90deg, hsl(var(--h) 85% 60%), hsl(var(--h) 90% 44%));
+      box-shadow:inset 0 2px 3px rgba(255,255,255,.6);
+      transition:width .8s cubic-bezier(.2,.8,.2,1), background .6s ease; }
+    .fill::after { content:""; position:absolute; top:0; bottom:0; left:-40%; width:40%;
+      background:linear-gradient(90deg, transparent, rgba(255,255,255,.65), transparent);
+      animation:flow 2.6s ease-in-out infinite; }
+    @keyframes flow { to { transform:translateX(350%); } }
     .used { margin-top:6px; font-size:14px; color:var(--dim); font-variant-numeric:tabular-nums; }
-    .rates { display:grid; grid-template-columns:repeat(3,1fr); gap:8px; padding:12px 16px; }
+
+    .rates { display:grid; grid-template-columns:repeat(3,1fr); gap:8px; padding:12px 18px; }
     .rates .v { font-size:20px; font-weight:600; font-variant-numeric:tabular-nums; }
-    .advice { margin:4px 12px 12px; padding:14px 16px; border-radius:10px;
-      background:var(--state); color:var(--on-state); }
-    .advice .head { font-size:24px; font-weight:700; }
+
+    /* 建議區：白色水滴卡片，標題依暫停時間分級上色 */
+    .advice { margin:4px 12px 14px; padding:14px 16px; border-radius:18px; color:var(--ink);
+      background:rgba(255,255,255,.88); border:1px solid rgba(255,255,255,.95);
+      box-shadow:0 6px 18px rgba(12,35,64,.12), inset 0 1px 0 #fff; }
+    .advice .head { font-size:24px; font-weight:700; transition:color .4s ease; }
+    .advice[data-tier="g"] .head { color:var(--tier-g); }
+    .advice[data-tier="y"] .head { color:var(--tier-y); }
+    .advice[data-tier="r"] .head { color:var(--tier-r); }
     .advice .detail { font-size:15px; line-height:1.5; margin-top:4px; }
-    .advice .note { font-size:12px; opacity:.75; margin-top:6px; }
+    .advice .note { font-size:12px; color:var(--dim); margin-top:6px; }
     .advice .note:empty { display:none; }
-    .foot { padding:0 16px 12px; font-size:12px; color:var(--dim); }
-    .foot.err { color:#FF8A8A; }
-    .pill { display:none; --state:var(--idle); background:var(--state); color:var(--on-state);
-      border:0; border-radius:999px; padding:10px 18px; font-size:20px; font-weight:700;
-      font-variant-numeric:tabular-nums; box-shadow:0 8px 24px rgba(8,16,24,.45); }
+    .foot { padding:0 18px 14px; font-size:12px; color:var(--dim); }
+    .foot.err { color:var(--tier-r); }
+
+    /* 收合後的水滴膠囊 */
+    .pill { display:none; font-size:20px; font-weight:700; font-variant-numeric:tabular-nums;
+      padding:10px 20px; color:hsl(var(--h) 80% 34%);
+      background:linear-gradient(135deg, rgba(255,255,255,.7), rgba(214,236,255,.35));
+      -webkit-backdrop-filter:blur(18px) saturate(180%); backdrop-filter:blur(18px) saturate(180%);
+      box-shadow:0 10px 26px rgba(12,35,64,.22), inset 0 1px 0 #fff; }
     .collapsed .panel { display:none; }
     .collapsed .pill { display:inline-block; }
-    @media (prefers-reduced-motion: reduce) { .fill { transition:none; } }
+
+    @media (prefers-reduced-motion: reduce) {
+      .panel::before, .fill::after { animation:none; }
+      .fill, .remain, .advice .head { transition:none; }
+    }
   `;
 
   const $ = {};
@@ -234,6 +286,7 @@
   $.detail   = h('div', { class: 'detail' }, '正在取得用量資料。');
   $.note     = h('div', { class: 'note' });
   $.foot     = h('div', { class: 'foot' }, '');
+  $.advice   = h('div', { class: 'advice', 'data-tier': 'n' }, $.head, $.detail, $.note);
   $.panel = h('div', { class: 'panel', 'data-state': 'idle' },
     $.header,
     h('div', { class: 'stats' },
@@ -244,7 +297,7 @@
       h('div', {}, h('div', { class: 'label' }, '目前速度'), $.vNow),
       h('div', {}, h('div', { class: 'label' }, '週期平均'), $.vAvg),
       h('div', {}, h('div', { class: 'label' }, '重置時預估'), $.proj)),
-    h('div', { class: 'advice' }, $.head, $.detail, $.note),
+    $.advice,
     $.foot);
   $.pill = h('button', { class: 'pill', type: 'button', 'data-state': 'idle',
     onclick: () => setCollapsed(false), 'aria-label': '展開用量面板' }, '—');
@@ -303,7 +356,10 @@
     $.pill.dataset.state = a.state;
 
     $.remain.textContent = pct(100 - a.u);
-    $.fill.style.width = `${Math.min(100, Math.max(0, a.u))}%`;
+    const rem = Math.min(100, Math.max(0, 100 - a.u));
+    $.wrap.style.setProperty('--h', hueFor(rem / 100));
+    $.fill.style.width = `${rem}%`;           // 液體量 = 剩餘用量
+    $.advice.dataset.tier = tierFor(a);
     $.used.textContent = `已用 ${pct(a.u)}`;
     $.count.textContent = a.r != null ? fmtHMS(a.r) : '—';
     $.vNow.textContent = a.r == null ? '—' : a.vNow != null ? perHour(a.vNow) : '取樣中';
