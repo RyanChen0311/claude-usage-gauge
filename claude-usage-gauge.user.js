@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Claude 用量儀表
 // @namespace    https://github.com/RyanChen0311
-// @version      2.3.0
+// @version      2.3.1
 // @description  在 claude.ai 顯示 5 小時用量、重置倒數、消耗速度與暫停建議
 // @match        https://claude.ai/*
 // @run-at       document-idle
@@ -403,7 +403,17 @@
   }
   setCollapsed(!!ui.collapsed);
   if (ui.x != null) place(ui.x, ui.y);
-  addEventListener('resize', () => { if (ui.x != null) place(ui.x, ui.y); });
+  // 面板實際尺寸一有變化（收合↔展開、縮放、文字行數增減、視窗縮小），
+  // 就用目前的實際位置重新夾一次邊界，確保永遠留在可視範圍內
+  function keepInView() {
+    const r = host.getBoundingClientRect();
+    if (r.left < 0 || r.top < 0 || r.right > innerWidth || r.bottom > innerHeight) {
+      place(r.left, r.top);
+      saveJSON(CFG.uiKey, ui);
+    }
+  }
+  new ResizeObserver(keepInView).observe(host);
+  addEventListener('resize', keepInView);
 
   // ---- 拖曳移動 ----
   // 按下時記錄「游標起點」與「面板起點」，移動時把位移量加回面板起點。
