@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Claude 用量儀表
 // @namespace    https://github.com/RyanChen0311
-// @version      1.2.1
+// @version      1.3.0
 // @description  在 claude.ai 顯示 5 小時用量、重置倒數、消耗速度與暫停建議
 // @match        https://claude.ai/*
 // @run-at       document-idle
@@ -21,6 +21,15 @@
     minSpanMin: 3,         // 樣本跨度不足 3 分鐘時改用週期平均
     warnPauseMin: 10,      // 建議暫停 < 10 分鐘 → 琥珀色「稍微放慢」
     resetJitterMs: 5 * 60_000,
+    // 進度條嚴重度配色（仿官方 設定 → 用量：藍 → 橘 → 紅）
+    // 門檻與色碼尚未對照官方頁面確認，可依實際觀察修改
+    bar: {
+      warnAt: 80,          // 已用 ≥ 80% → 橘
+      critAt: 95,          // 已用 ≥ 95% → 紅
+      normal: '#2C84DB',
+      warn:   '#E8861A',
+      crit:   '#D93A3A',
+    },
     storeKey: 'cug.samples',
     uiKey: 'cug.ui',
   };
@@ -142,6 +151,9 @@
   // 剩餘比例 → 色相：100% 綠(145) → 50% 黃(48) → 0% 紅(0)
   const hueFor = (p) => (p >= 0.5 ? 48 + ((p - 0.5) / 0.5) * 97 : (p / 0.5) * 48).toFixed(0);
 
+  // 進度條顏色：依已用量套用嚴重度
+  const barColor = (u) => (u >= CFG.bar.critAt ? CFG.bar.crit : u >= CFG.bar.warnAt ? CFG.bar.warn : CFG.bar.normal);
+
   // 建議區標題分級：暫停 ≤20 分綠、20～40 分黃、>40 分紅
   function tierFor(a) {
     if (a.state === 'safe') return 'g';
@@ -220,19 +232,19 @@
     button:disabled { opacity:.6; cursor:progress; }
     button:focus-visible { outline:2px solid #2A8BE0; outline-offset:2px; }
 
-    .stats { display:grid; grid-template-columns:1fr 1fr; gap:12px; padding:18px 18px 8px; }
+    .stats { display:grid; grid-template-columns:auto auto; justify-content:space-between; gap:12px;
+      padding:18px 18px 8px; }
     .label { font-size:13px; color:var(--dim); margin-bottom:6px; }
-    .big { font-size:60px; font-weight:600; line-height:1; font-variant-numeric:tabular-nums;
+    .big { font-size:50px; font-weight:600; line-height:1; font-variant-numeric:tabular-nums;
       text-shadow:0 1px 0 rgba(255,255,255,.8); }
     .remain { color:hsl(var(--h) 80% 36%); transition:color .6s ease; }
-    .count { font-size:44px; line-height:60px; }
 
     /* 玻璃管 + 流動液體 */
     .bar { padding:8px 18px 4px; }
     .track { height:16px; border-radius:999px; overflow:hidden; background:rgba(255,255,255,.35);
       box-shadow:inset 0 2px 4px rgba(12,35,64,.18), inset 0 -1px 0 rgba(255,255,255,.85); }
     .fill { position:relative; height:100%; width:0; border-radius:999px; overflow:hidden;
-      background:linear-gradient(90deg, hsl(var(--h) 85% 60%), hsl(var(--h) 90% 44%));
+      background:var(--bar, #2C84DB);
       box-shadow:inset 0 2px 3px rgba(255,255,255,.6);
       transition:width .8s cubic-bezier(.2,.8,.2,1), background .6s ease; }
     .fill::after { content:""; position:absolute; top:0; bottom:0; left:-40%; width:40%;
@@ -361,7 +373,9 @@
     $.remain.textContent = pct(100 - a.u);
     const rem = Math.min(100, Math.max(0, 100 - a.u));
     $.wrap.style.setProperty('--h', hueFor(rem / 100));
-    $.fill.style.width = `${rem}%`;           // 液體量 = 剩餘用量
+    const used = Math.min(100, Math.max(0, a.u));
+    $.fill.style.width = `${used}%`;          // 進度條 = 已用量（同官方）
+    $.fill.style.setProperty('--bar', barColor(used));
     $.advice.dataset.tier = tierFor(a);
     $.used.textContent = `已用 ${pct(a.u)}`;
     $.count.textContent = a.r != null ? fmtHMS(a.r) : '—';
