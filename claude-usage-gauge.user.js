@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Claude 用量儀表
 // @namespace    https://github.com/RyanChen0311
-// @version      2.2.1
+// @version      2.3.0
 // @description  在 claude.ai 顯示 5 小時用量、重置倒數、消耗速度與暫停建議
 // @match        https://claude.ai/*
 // @run-at       document-idle
@@ -175,13 +175,11 @@
     return k > CFG.rate.critK ? 'r' : k > CFG.rate.warnK ? 'y' : 'n';
   }
 
-  // 建議區標題分級：暫停 ≤20 分綠、20～40 分黃、>40 分紅
+  // 建議區標題分級：與速率欄共用同一套 k 值門檻
+  // 暫停時間 P = r × (1 − 1/k)，所以 k > 1 ⇔ 需要暫停（黃），k > 1.5 ⇔ P > r/3（紅）
   function tierFor(a) {
-    if (a.state === 'safe') return 'g';
     if (a.state === 'out') return 'r';
-    if (a.state === 'warn' || a.state === 'danger') {
-      return a.pause <= 20 ? 'g' : a.pause <= 40 ? 'y' : 'r';
-    }
+    if (a.state === 'warn' || a.state === 'danger') return rateLevel(a.v, a);
     return 'n';
   }
 
@@ -224,7 +222,7 @@
   const CSS = `
     :host { all: initial;
       --ink:#0C2340; --dim:#4A6480;
-      --tier-g:#1E9E63; --tier-y:#C98A00; --tier-r:#D93A3A; }
+      --tier-y:#C98A00; --tier-r:#D93A3A; }
     * { box-sizing:border-box; }
     .wrap { font-family:"Bahnschrift","DIN Alternate","Segoe UI","Microsoft JhengHei","PingFang TC",sans-serif; }
 
@@ -297,7 +295,6 @@
     .advice { padding:6px 56px 14px 18px; color:var(--ink); }   /* 右側留位置給重新整理圖示 */
     .advice .head { font-size:24px; font-weight:700; transition:color .4s ease; }
     .advice .head:empty { display:none; }
-    .advice[data-tier="g"] .head { color:var(--tier-g); }
     .advice[data-tier="y"] .head { color:var(--tier-y); }
     .advice[data-tier="r"] .head { color:var(--tier-r); }
     .advice .detail { font-size:16px; line-height:1.6; margin-top:6px; white-space:pre-line;
