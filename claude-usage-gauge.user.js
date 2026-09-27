@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Claude 用量儀表
 // @namespace    https://github.com/RyanChen0311
-// @version      2.5.2
+// @version      2.6.0
 // @description  在 claude.ai 顯示 5 小時用量、重置倒數、消耗速度與暫停建議
 // @match        https://claude.ai/*
 // @run-at       document-idle
@@ -114,7 +114,7 @@
 
     const r = (cur.r - now) / 60_000;                         // 距離重置（分鐘）
     const elapsed = Math.min(CFG.windowMin, Math.max(0, CFG.windowMin - r));
-    const vAvg = elapsed > 0.5 ? u / elapsed : null;          // 週期平均速度
+    const vAvg = elapsed > 0.5 ? u / elapsed : null;          // 週期平均速度（不顯示，僅在即時樣本不足時作為後備）
 
     const recent = samples.filter((p) => p.t >= now - CFG.rateWindowMin * 60_000);
     const span = recent.length > 1 ? (recent[recent.length - 1].t - recent[0].t) / 60_000 : 0;
@@ -354,7 +354,7 @@
   $.resetAt  = h('span', {}, '');
   $.used     = h('div', { class: 'used' }, $.usedText, $.resetAt);
   $.vNow     = h('div', { class: 'v' }, '—');
-  $.vAvg     = h('div', { class: 'v' }, '—');
+  $.vTgt     = h('div', { class: 'v' }, '—');
   $.proj     = h('div', { class: 'v' }, '—');
   $.head     = h('div', { class: 'head' }, '讀取中');
   $.detail   = h('div', { class: 'detail' }, '正在取得用量資料。');
@@ -368,8 +368,8 @@
       h('div', {}, h('div', { class: 'label' }, '距離重置剩餘時間'), $.count)),
     h('div', { class: 'bar' }, h('div', { class: 'track' }, $.fill), $.used),
     h('div', { class: 'rates' },
-      h('div', {}, h('div', { class: 'label' }, '目前速度'), $.vNow),
-      h('div', {}, h('div', { class: 'label' }, '週期平均'), $.vAvg),
+      h('div', {}, h('div', { class: 'label' }, '目前速率'), $.vNow),
+      h('div', {}, h('div', { class: 'label' }, '目標速率'), $.vTgt),
       h('div', {}, h('div', { class: 'label' }, '預估用完時間'), $.proj)),
     $.advice,
     $.refresh,
@@ -574,9 +574,9 @@
     $.resetAt.textContent = resetTs && a.state !== 'rolled' ? `${resetText(resetTs)} 重置` : '';
     $.count.textContent = a.r != null ? fmtHMS(a.r) : '—';
     $.vNow.textContent = a.r == null ? '—' : a.vNow != null ? perMin(a.vNow) : '取樣中';
-    $.vAvg.textContent = a.vAvg != null ? perMin(a.vAvg) : '—';
+    // 目標速率：剛好在重置時用完所需的速率，作為比較基準，本身不上色
+    $.vTgt.textContent = a.r != null && a.state !== 'out' && a.vTarget != null ? perMin(a.vTarget) : '—';
     $.vNow.dataset.level = rateLevel(a.vNow, a);
-    $.vAvg.dataset.level = rateLevel(a.vAvg, a);
     $.proj.dataset.level = rateLevel(a.vNow, a);   // 預估用完時間由目前速度推算，顏色跟著目前速度
     // 依目前實際速率（最近 15 分鐘）推算用完時刻，不考慮中途重置
     $.proj.textContent =
