@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Claude 用量儀表
 // @namespace    https://github.com/RyanChen0311
-// @version      1.6.1
+// @version      1.6.2
 // @description  在 claude.ai 顯示 5 小時用量、重置倒數、消耗速度與暫停建議
 // @match        https://claude.ai/*
 // @run-at       document-idle
@@ -146,12 +146,10 @@
     return `${Math.floor(m / 60)} 小時 ${pad(m % 60)} 分`;
   };
   const waitLine = (r) => `仍需等待 ${Math.max(0, Math.ceil(r))} 分後重置`;
-  const hhmm = (t) => new Date(t).toLocaleTimeString('zh-TW', { hour12: false, hour: '2-digit', minute: '2-digit' });
-  // 今天只顯示「時:分」，跨日則加上「月/日」
+  // 「X 月 X 日 X 時 X 分」（24 小時制）
   const etaText = (t) => {
     const d = new Date(t);
-    return d.toDateString() === new Date().toDateString()
-      ? hhmm(t) : `${d.getMonth() + 1}/${d.getDate()} ${hhmm(t)}`;
+    return `${d.getMonth() + 1} 月 ${d.getDate()} 日 ${d.getHours()} 時 ${d.getMinutes()} 分`;
   };
   const clock = (t) => new Date(t).toLocaleTimeString('zh-TW', { hour12: false });
 
@@ -247,7 +245,8 @@
     .fill { height:100%; width:0; border-radius:999px; background:var(--bar, #2C84DB); }
     .used { margin-top:6px; font-size:14px; color:var(--dim); font-variant-numeric:tabular-nums; }
 
-    .rates { display:grid; grid-template-columns:repeat(3,1fr); gap:8px; padding:12px 18px; }
+    .rates { display:grid; grid-template-columns:auto auto auto; justify-content:space-between;
+      gap:8px; padding:12px 18px; }
     .rates .v { font-size:17px; white-space:nowrap;
       /* 數字與中文用同一套字型，避免混排時大小不一 */
       font-family:"Microsoft JhengHei","PingFang TC","Noto Sans TC",sans-serif; font-weight:600; font-variant-numeric:tabular-nums; }
@@ -300,7 +299,7 @@
     $.header,
     h('div', { class: 'stats' },
       h('div', {}, h('div', { class: 'label' }, '剩餘用量'), $.remain),
-      h('div', {}, h('div', { class: 'label' }, '距離重置'), $.count)),
+      h('div', {}, h('div', { class: 'label' }, '距離重置剩餘時間'), $.count)),
     h('div', { class: 'bar' }, h('div', { class: 'track' }, $.fill), $.used),
     h('div', { class: 'rates' },
       h('div', {}, h('div', { class: 'label' }, '目前速度'), $.vNow),
