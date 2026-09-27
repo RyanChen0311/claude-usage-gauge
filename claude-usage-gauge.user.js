@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Claude 用量儀表
 // @namespace    https://github.com/RyanChen0311
-// @version      2.1.4
+// @version      2.2.0
 // @description  在 claude.ai 顯示 5 小時用量、重置倒數、消耗速度與暫停建議
 // @match        https://claude.ai/*
 // @run-at       document-idle
@@ -261,6 +261,8 @@
     .icon-btn { display:inline-flex; padding:6px; background:none; border:0; box-shadow:none;
       border-radius:8px; color:var(--dim); transition:color .2s ease; }
     .icon-btn:hover { color:var(--ink); }
+    /* 重新整理固定在面板右下角，避開角落縮放把手 */
+    .panel > .icon-btn.corner-refresh { position:absolute; right:20px; bottom:16px; z-index:4; }
     .icon-btn svg { display:block; width:20px; height:20px; }
     .icon-btn.busy svg { animation:spin .9s linear infinite; }
     @keyframes spin { to { transform:rotate(360deg); } }
@@ -291,7 +293,7 @@
     .rates .v[data-level="r"] { color:var(--tier-r); }
 
     /* 建議區：純文字，標題依暫停時間分級上色 */
-    .advice { padding:6px 18px 14px; color:var(--ink); }
+    .advice { padding:6px 56px 14px 18px; color:var(--ink); }   /* 右側留位置給重新整理圖示 */
     .advice .head { font-size:24px; font-weight:700; transition:color .4s ease; }
     .advice[data-tier="g"] .head { color:var(--tier-g); }
     .advice[data-tier="y"] .head { color:var(--tier-y); }
@@ -300,7 +302,7 @@
       font-variant-numeric:tabular-nums; }
     .advice .note { font-size:12px; color:var(--dim); margin-top:6px; }
     .advice .note:empty { display:none; }
-    .foot { padding:0 18px 14px; font-size:12px; color:var(--dim); }
+    .foot { padding:0 56px 14px 18px; font-size:12px; color:var(--dim); }
     .foot.err { color:var(--tier-r); }
     .foot:empty { display:none; }
 
@@ -335,13 +337,13 @@
     }
     return svg;
   }
-  $.refresh  = h('button', { class: 'icon-btn', type: 'button', title: '重新整理', 'aria-label': '重新整理',
+  $.refresh  = h('button', { class: 'icon-btn corner-refresh', type: 'button', title: '重新整理', 'aria-label': '重新整理',
     onclick: () => refresh() },
     icon('M21 12a9 9 0 1 1-9-9c2.52 0 4.93 1 6.74 2.74L21 8', 'M21 3v5h-5'));
   $.collapse = h('button', { class: 'icon-btn', type: 'button', title: '收合', 'aria-label': '收合',
     onclick: () => setCollapsed(true) },
     icon('M5 12h14'));
-  $.header   = h('header', {}, h('div', { class: 'title' }, 'Claude 5 小時用量'), $.refresh, $.collapse);
+  $.header   = h('header', {}, h('div', { class: 'title' }, 'Claude 5 小時用量'), $.collapse);
   $.remain   = h('div', { class: 'big remain' }, '—');
   $.count    = h('div', { class: 'big count' }, '—');
   $.fill     = h('div', { class: 'fill' });
@@ -367,6 +369,7 @@
       h('div', {}, h('div', { class: 'label' }, '週期平均'), $.vAvg),
       h('div', {}, h('div', { class: 'label' }, '預估用完時間'), $.proj)),
     $.advice,
+    $.refresh,
     $.foot);
   $.pill = h('button', { class: 'pill', type: 'button', 'data-state': 'idle',
     onclick: () => setCollapsed(false), 'aria-label': '展開用量面板' }, '—');
