@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Claude 用量儀表
 // @namespace    https://github.com/RyanChen0311
-// @version      2.9.0
+// @version      3.0.0
 // @description  在 claude.ai 顯示 5 小時用量、重置倒數、消耗速度與暫停建議
 // @match        https://claude.ai/*
 // @run-at       document-idle
@@ -318,13 +318,13 @@
     .focus .panel { cursor:default; }
     .focus .panel > .rz { display:none; }
 
-    /* 子母畫面模式：視窗由系統移動與縮放，面板內的拖曳、四角縮放、收合都不需要 */
-    .pip .panel { cursor:default; max-width:none; border:0; border-radius:0; box-shadow:none;
+    /* 彈出視窗模式：視窗由系統移動、縮放、最大化，面板內的拖曳、四角縮放、收合都不需要 */
+    .popout .panel { cursor:default; max-width:none; border:0; border-radius:0; box-shadow:none;
       display:flex; flex-direction:column; }
     /* 面板填滿視窗後，多出的高度平均分配在內容上下，標題列固定在頂端 */
-    .pip .panel > .stats { margin-top:auto; }
-    .pip .panel > .advice { margin-bottom:auto; }
-    .pip .panel > .rz, .pip .collapse-btn { display:none; }
+    .popout .panel > .stats { margin-top:auto; }
+    .popout .panel > .advice { margin-bottom:auto; }
+    .popout .panel > .rz, .popout .collapse-btn { display:none; }
 
     @media (prefers-reduced-motion: reduce) {
       .panel::before { animation:none; }
@@ -358,13 +358,12 @@
     title: '關閉（重新整理頁面後再出現）', 'aria-label': '關閉面板',
     onclick: () => closePanel() },
     icon('M18 6 6 18', 'M6 6l12 12'));
-  // 彈出成獨立視窗（Document Picture-in-Picture）；瀏覽器不支援時不顯示
+  // 彈出成一般視窗（window.open）：可最大化、F11 全螢幕、移到螢幕任何位置
+  const POPOUT_TITLE = '彈出成獨立視窗（可最大化、F11 全螢幕）';
   $.popout   = h('button', { class: 'icon-btn', type: 'button',
-    title: '彈出成獨立視窗（可移到螢幕任何位置）', 'aria-label': '彈出成獨立視窗',
-    onclick: () => togglePip() },
-    icon('M21 9V6a2 2 0 0 0-2-2H4a2 2 0 0 0-2 2v10c0 1.1.9 2 2 2h4',
-         'M14 13h6a2 2 0 0 1 2 2v3a2 2 0 0 1-2 2h-6a2 2 0 0 1-2-2v-3a2 2 0 0 1 2-2z'));
-  if (!('documentPictureInPicture' in window)) $.popout.style.display = 'none';
+    title: POPOUT_TITLE, 'aria-label': '彈出成獨立視窗',
+    onclick: () => togglePopout() },
+    icon('M21 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h6', 'M21 3l-9 9', 'M15 3h6v6'));
   $.header   = h('header', {}, h('div', { class: 'title' }, 'Claude 5 小時用量'),
     $.popout, $.collapse, $.close);
   $.remain   = h('div', { class: 'big remain' }, '—');
@@ -410,7 +409,7 @@
   // ---- 位置與收合狀態 ----
   const ui = loadJSON(CFG.uiKey, { x: null, y: null, collapsed: false, scale: 1 });
   let focus = null;   // 專注模式狀態：null 代表一般模式；否則記錄進入前的位置與網頁捲動設定
-  let pipWin = null;  // 子母畫面視窗；null 代表面板在網頁內
+  let popWin = null;  // 彈出視窗；null 代表面板在網頁內
   // 縮放上限 = 目前面板在 1 倍時的尺寸，放大到碰到視窗寬或高為止
   function fitScale() {
     const r = host.getBoundingClientRect();
@@ -441,7 +440,7 @@
   // 面板實際尺寸一有變化（收合↔展開、縮放、文字行數增減、視窗縮小），
   // 就用目前的實際位置重新夾一次邊界，確保永遠留在可視範圍內
   function keepInView() {
-    if (pipWin) { fitPip(); return; }                  // 子母畫面：依視窗大小重新縮放
+    if (popWin) { fitPopout(); return; }               // 彈出視窗：依視窗大小重新縮放
     if (focus) { fitCenter(); return; }                // 專注模式：重新填滿並置中
     if (!ui.collapsed && ui.scale > fitScale() + 1e-3) applyScale(ui.scale);  // 視窗變小時先縮到放得下
     const r = host.getBoundingClientRect();
@@ -462,7 +461,7 @@
     let suppressClick = false;
 
     el.addEventListener('pointerdown', (e) => {
-      if (e.button !== 0 || focus || pipWin) return;    // 只接受主要按鍵；專注模式與子母畫面不能拖曳
+      if (e.button !== 0 || focus || popWin) return;    // 只接受主要按鍵；專注模式與彈出視窗不能拖曳
       if (el === $.panel && e.target.closest('button, .rz')) return;  // 按鈕與縮放把手不觸發拖曳
       const r = host.getBoundingClientRect();
       st = { px: e.clientX, py: e.clientY, left: r.left, top: r.top, moved: false, id: e.pointerId };
@@ -533,7 +532,7 @@
   $.header.title = '雙擊面板：填滿畫面／還原（Esc 也可還原）';
   // 雙擊面板任何位置都能切換；按鈕與四角縮放把手除外（四角雙擊是還原 1 倍）
   $.panel.addEventListener('dblclick', (e) => {
-    if (pipWin || e.target.closest('button, .rz')) return;
+    if (popWin || e.target.closest('button, .rz')) return;
     toggleFocus();
   });
   document.addEventListener('keydown', (e) => {
@@ -661,18 +660,19 @@
     if (document.visibilityState === 'visible') refresh();
   });
 
-  // ---- 子母畫面：把整個面板搬到永遠置頂的獨立視窗 ----
+  // ---- 彈出視窗：把整個面板搬到一般的瀏覽器視窗 ----
   // 面板的畫面與樣式都在 Shadow DOM 內，搬動 host 即可整塊帶走；
   // 抓取與計算仍在 claude.ai 分頁執行，所以登入狀態不受影響。
-  let pipTimer = null;
+  // 與子母畫面不同，一般視窗沒有尺寸上限，但也不會永遠置頂。
+  let popTimer = null;
 
-  // 子母畫面：面板外框與視窗一樣大，內容則等比放大到放得下為止
+  // 面板外框與視窗一樣大，內容則等比放大到放得下為止
   // 1. 先還原成 1 倍、自然寬高，量出內容本身需要的尺寸
   // 2. 取寬、高兩個方向中較小的放大倍率套用到內容（文字不變形）
   // 3. 再把面板寬高設成「視窗尺寸 ÷ 倍率」，放大後剛好等於視窗
-  function fitPip() {
-    if (!pipWin) return;
-    const W = pipWin.innerWidth, H = pipWin.innerHeight;
+  function fitPopout() {
+    if (!popWin) return;
+    const W = popWin.innerWidth, H = popWin.innerHeight;
     $.panel.style.width = ''; $.panel.style.height = '';
     $.wrap.style.zoom = '1';
     const r = $.panel.getBoundingClientRect();
@@ -683,51 +683,59 @@
     $.panel.style.height = `${H / s}px`;
   }
 
-  async function togglePip() {
-    if (pipWin) { pipWin.close(); return; }            // 已彈出：關閉視窗即回到網頁內
+  // 彈出視窗關閉後，把面板搬回網頁（只執行一次）
+  function restoreFromPopout() {
+    if (!popWin) return;
+    try { popWin.clearInterval(popTimer); } catch { /* 視窗已關閉 */ }
+    popTimer = null;
+    popWin = null;
+    $.wrap.classList.remove('popout');
+    $.panel.style.width = ''; $.panel.style.height = '';   // 取消填滿視窗的尺寸
+    $.popout.title = POPOUT_TITLE;
+    $.popout.setAttribute('aria-label', '彈出成獨立視窗');
+    if (closed) return;
+    host.style.cssText = 'position:fixed;z-index:2147483000;top:72px;right:16px;';
+    document.body.append(host);
+    $.wrap.style.zoom = String(ui.scale);              // 恢復網頁內的倍率
+    if (ui.x != null) place(ui.x, ui.y);
+    keepInView();
+  }
+
+  function togglePopout() {
+    if (popWin) { popWin.close(); restoreFromPopout(); return; }   // 已彈出：關閉視窗即回到網頁內
     if (focus) toggleFocus();
-    let w;
-    try {
-      // 以整個螢幕可用範圍請求；瀏覽器會自動壓到它允許的最大尺寸
-      // （規格要求限制最大尺寸，避免置頂視窗蓋滿螢幕，實際約為螢幕的八成）
-      w = await window.documentPictureInPicture.requestWindow({
-        width: screen.availWidth, height: screen.availHeight,
-      });
-    } catch (e) {
-      lastErr = `無法開啟獨立視窗：${e.message || e}`;
+    // 以整個螢幕可用範圍開啟；之後可用系統按鈕最大化或按 F11 全螢幕
+    const feat = `popup,left=${screen.availLeft || 0},top=${screen.availTop || 0},` +
+                 `width=${screen.availWidth},height=${screen.availHeight}`;
+    const w = window.open('', 'claude-usage-gauge', feat);
+    if (!w) {
+      lastErr = '無法開啟獨立視窗：瀏覽器封鎖了彈出視窗，請允許 claude.ai 開啟彈出式視窗';
       renderFoot();
       return;
     }
-    pipWin = w;
-    const body = w.document.body;
-    body.style.cssText = 'margin:0;height:100vh;overflow:hidden;background:#EAF2FA;';
+    popWin = w;
+    const doc = w.document;
+    doc.title = 'Claude 用量儀表';
+    doc.body.replaceChildren();                        // 清掉同名舊視窗殘留的內容
+    doc.body.style.cssText = 'margin:0;height:100vh;overflow:hidden;background:#EAF2FA;';
     host.style.cssText = 'position:static;';
-    body.append(host);                                 // 跨文件搬移，事件與 Shadow DOM 一併帶走
-    $.wrap.classList.add('pip');
+    doc.body.append(host);                             // 跨文件搬移，事件與 Shadow DOM 一併帶走
+    $.wrap.classList.add('popout');
     $.popout.title = '回到網頁內';
     $.popout.setAttribute('aria-label', '回到網頁內');
-    fitPip();
-    w.addEventListener('resize', fitPip);
-    // 分頁在背景時主視窗的計時器會被節流；改用子母畫面視窗的計時器讓倒數每秒更新
-    pipTimer = w.setInterval(render, 1000);
-
-    // 視窗被關閉（按 ×、返回分頁、或分頁重新整理）時，把面板搬回網頁
-    w.addEventListener('pagehide', () => {
-      w.clearInterval(pipTimer);
-      pipTimer = null;
-      pipWin = null;
-      $.wrap.classList.remove('pip');
-      $.panel.style.width = ''; $.panel.style.height = '';   // 取消填滿視窗的尺寸
-      $.popout.title = '彈出成獨立視窗（可移到螢幕任何位置）';
-      $.popout.setAttribute('aria-label', '彈出成獨立視窗');
-      if (closed) return;
-      host.style.cssText = 'position:fixed;z-index:2147483000;top:72px;right:16px;';
-      document.body.append(host);
-      $.wrap.style.zoom = String(ui.scale);            // 恢復網頁內的倍率
-      if (ui.x != null) place(ui.x, ui.y);
-      keepInView();
-    });
+    fitPopout();
+    w.addEventListener('resize', fitPopout);
+    // 分頁在背景時主視窗的計時器會被節流；改用彈出視窗的計時器讓倒數每秒更新
+    popTimer = w.setInterval(render, 1000);
+    w.focus();
+    // 使用者用系統的 × 關閉彈出視窗時，把面板搬回網頁
+    w.addEventListener('pagehide', restoreFromPopout);
   }
+
+  // 保險：部分情況 pagehide 不會觸發，定期檢查視窗是否已被關閉
+  setInterval(() => { if (popWin && popWin.closed) restoreFromPopout(); }, 1000);
+  // claude.ai 分頁重新整理或關閉時，一併關閉彈出視窗，避免留下失效的空視窗
+  addEventListener('pagehide', () => { if (popWin) popWin.close(); });
 
   // ---- 一鍵關閉：移除面板並停止所有更新，重新整理頁面後才會再出現 ----
   // 不寫入 localStorage，所以下次載入時一切照舊
@@ -736,7 +744,7 @@
     closed = true;
     clearInterval(pollTimer);
     clearInterval(renderTimer);
-    if (pipWin) pipWin.close();        // pagehide 會看到 closed，不再把面板搬回網頁
+    if (popWin) popWin.close();        // closed 已設為 true，不會再把面板搬回網頁
     host.remove();
   }
 })();
