@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Claude 用量儀表
 // @namespace    https://github.com/RyanChen0311
-// @version      2.5.0
+// @version      2.5.1
 // @description  在 claude.ai 顯示 5 小時用量、重置倒數、消耗速度與暫停建議
 // @match        https://claude.ai/*
 // @run-at       document-idle
@@ -478,7 +478,7 @@
   makeDraggable($.panel);
   makeDraggable($.pill);
 
-  // ---- 專注模式：雙擊標題列在「1 倍」與「填滿畫面」之間切換 ----
+  // ---- 專注模式：雙擊面板在「1 倍」與「填滿畫面」之間切換 ----
   function fitCenter() {
     applyScale(Infinity);                              // clampScale 會把它壓到剛好填滿可視範圍
     const r = host.getBoundingClientRect();
@@ -508,13 +508,10 @@
     }
   }
 
-  $.header.title = '雙擊：填滿畫面／還原（Esc 也可還原）';
-  // 面板在 pointerdown 時會捕獲指標，dblclick 的目標因此變成面板本身，
-  // 所以掛在面板上，再用座標判斷是否落在標題列內
+  $.header.title = '雙擊面板：填滿畫面／還原（Esc 也可還原）';
+  // 雙擊面板任何位置都能切換；按鈕與四角縮放把手除外（四角雙擊是還原 1 倍）
   $.panel.addEventListener('dblclick', (e) => {
     if (e.target.closest('button, .rz')) return;
-    const r = $.header.getBoundingClientRect();
-    if (e.clientX < r.left || e.clientX > r.right || e.clientY < r.top || e.clientY > r.bottom) return;
     toggleFocus();
   });
   document.addEventListener('keydown', (e) => {
