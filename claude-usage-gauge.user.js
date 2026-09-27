@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Claude 用量儀表
 // @namespace    https://github.com/RyanChen0311
-// @version      2.2.0
+// @version      2.2.1
 // @description  在 claude.ai 顯示 5 小時用量、重置倒數、消耗速度與暫停建議
 // @match        https://claude.ai/*
 // @run-at       document-idle
@@ -202,7 +202,8 @@
         const early = a.state === 'warn' || a.state === 'danger';
         // 空等時間 = 距離重置 − 照目前速率的耗盡時間（等於建議暫停時間）
         const body = early ? `${drain}\n${waitLine(a.pause)}` : drain;
-        return [`建議暫停：${fmtHM(a.pause)}`, body, note];
+        // 不需要暫停時，不顯示「建議暫停」這一行
+        return [early ? `建議暫停：${fmtHM(a.pause)}` : '', body, note];
       }
     }
   }
@@ -295,6 +296,7 @@
     /* 建議區：純文字，標題依暫停時間分級上色 */
     .advice { padding:6px 56px 14px 18px; color:var(--ink); }   /* 右側留位置給重新整理圖示 */
     .advice .head { font-size:24px; font-weight:700; transition:color .4s ease; }
+    .advice .head:empty { display:none; }
     .advice[data-tier="g"] .head { color:var(--tier-g); }
     .advice[data-tier="y"] .head { color:var(--tier-y); }
     .advice[data-tier="r"] .head { color:var(--tier-r); }
