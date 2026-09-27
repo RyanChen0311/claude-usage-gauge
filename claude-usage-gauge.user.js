@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Claude 用量儀表
 // @namespace    https://github.com/RyanChen0311
-// @version      1.3.0
+// @version      1.3.1
 // @description  在 claude.ai 顯示 5 小時用量、重置倒數、消耗速度與暫停建議
 // @match        https://claude.ai/*
 // @run-at       document-idle
@@ -148,9 +148,6 @@
   const waitLine = (r) => `仍需等待 ${Math.max(0, Math.ceil(r))} 分後重置`;
   const clock = (t) => new Date(t).toLocaleTimeString('zh-TW', { hour12: false });
 
-  // 剩餘比例 → 色相：100% 綠(145) → 50% 黃(48) → 0% 紅(0)
-  const hueFor = (p) => (p >= 0.5 ? 48 + ((p - 0.5) / 0.5) * 97 : (p / 0.5) * 48).toFixed(0);
-
   // 進度條顏色：依已用量套用嚴重度
   const barColor = (u) => (u >= CFG.bar.critAt ? CFG.bar.crit : u >= CFG.bar.warnAt ? CFG.bar.warn : CFG.bar.normal);
 
@@ -200,7 +197,7 @@
 
   const CSS = `
     :host { all: initial;
-      --ink:#0C2340; --dim:#4A6480; --h:145;
+      --ink:#0C2340; --dim:#4A6480;
       --tier-g:#1E9E63; --tier-y:#C98A00; --tier-r:#D93A3A; }
     * { box-sizing:border-box; }
     .wrap { font-family:"Bahnschrift","DIN Alternate","Segoe UI","Microsoft JhengHei","PingFang TC",sans-serif; }
@@ -237,7 +234,7 @@
     .label { font-size:13px; color:var(--dim); margin-bottom:6px; }
     .big { font-size:50px; font-weight:600; line-height:1; font-variant-numeric:tabular-nums;
       text-shadow:0 1px 0 rgba(255,255,255,.8); }
-    .remain { color:hsl(var(--h) 80% 36%); transition:color .6s ease; }
+    .remain { color:var(--bar, #2C84DB); transition:color .6s ease; }
 
     /* 玻璃管 + 流動液體 */
     .bar { padding:8px 18px 4px; }
@@ -273,7 +270,7 @@
 
     /* 收合後的水滴膠囊 */
     .pill { display:none; font-size:20px; font-weight:700; font-variant-numeric:tabular-nums;
-      padding:10px 20px; color:hsl(var(--h) 80% 34%);
+      padding:10px 20px; color:var(--bar, #2C84DB);
       background:linear-gradient(135deg, rgba(255,255,255,.7), rgba(214,236,255,.35));
       -webkit-backdrop-filter:blur(18px) saturate(180%); backdrop-filter:blur(18px) saturate(180%);
       box-shadow:0 10px 26px rgba(12,35,64,.22), inset 0 1px 0 #fff; }
@@ -371,11 +368,9 @@
     $.pill.dataset.state = a.state;
 
     $.remain.textContent = pct(100 - a.u);
-    const rem = Math.min(100, Math.max(0, 100 - a.u));
-    $.wrap.style.setProperty('--h', hueFor(rem / 100));
     const used = Math.min(100, Math.max(0, a.u));
     $.fill.style.width = `${used}%`;          // 進度條 = 已用量（同官方）
-    $.fill.style.setProperty('--bar', barColor(used));
+    $.wrap.style.setProperty('--bar', barColor(used));   // 進度條、剩餘數字、膠囊共用
     $.advice.dataset.tier = tierFor(a);
     $.used.textContent = `已用 ${pct(a.u)}`;
     $.count.textContent = a.r != null ? fmtHMS(a.r) : '—';
