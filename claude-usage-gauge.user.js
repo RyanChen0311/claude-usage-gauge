@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Claude 用量儀表
 // @namespace    https://github.com/RyanChen0311
-// @version      2.3.2
+// @version      2.4.0
 // @description  在 claude.ai 顯示 5 小時用量、重置倒數、消耗速度與暫停建議
 // @match        https://claude.ai/*
 // @run-at       document-idle
@@ -34,8 +34,7 @@
       warnK: 1.0,          // k > 1.0 → 黃：會提前耗盡
       critK: 1.5,          // k > 1.5 → 紅：剩餘時間還有 1/3 以上就會耗盡
     },
-    scaleMin: 0.6,         // 面板縮放下限
-    scaleMax: 2.2,         // 面板縮放上限
+    scaleMin: 0.6,         // 面板縮放下限；上限不設固定值，放大到剛好填滿可視範圍為止
     storeKey: 'cug.samples',    // localStorage：用量取樣紀錄
     uiKey: 'cug.ui',            // localStorage：位置、收合狀態、縮放倍率
   };
@@ -382,7 +381,14 @@
 
   // ---- 位置與收合狀態 ----
   const ui = loadJSON(CFG.uiKey, { x: null, y: null, collapsed: false, scale: 1 });
-  const clampScale = (v) => Math.min(CFG.scaleMax, Math.max(CFG.scaleMin, v));
+  // 縮放上限 = 目前面板在 1 倍時的尺寸，放大到碰到視窗寬或高為止
+  function fitScale() {
+    const r = host.getBoundingClientRect();
+    const z = Number($.wrap.style.zoom) || 1;          // 以實際套用中的倍率換算回 1 倍尺寸
+    const w = r.width / z, h = r.height / z;
+    return Math.max(CFG.scaleMin, Math.min(innerWidth / w, innerHeight / h));
+  }
+  const clampScale = (v) => Math.min(fitScale(), Math.max(CFG.scaleMin, v));
   function applyScale(v) {
     ui.scale = clampScale(v);
     $.wrap.style.zoom = String(ui.scale);   // 等比縮放整個面板（含文字）
@@ -404,6 +410,7 @@
   // 面板實際尺寸一有變化（收合↔展開、縮放、文字行數增減、視窗縮小），
   // 就用目前的實際位置重新夾一次邊界，確保永遠留在可視範圍內
   function keepInView() {
+    if (!ui.collapsed && ui.scale > fitScale() + 1e-3) applyScale(ui.scale);  // 視窗變小時先縮到放得下
     const r = host.getBoundingClientRect();
     if (r.left < 0 || r.top < 0 || r.right > innerWidth || r.bottom > innerHeight) {
       place(r.left, r.top);
