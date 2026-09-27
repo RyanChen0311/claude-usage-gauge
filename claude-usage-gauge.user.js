@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Claude 用量儀表
 // @namespace    https://github.com/RyanChen0311
-// @version      2.4.0
+// @version      2.5.0
 // @description  在 claude.ai 顯示 5 小時用量、重置倒數、消耗速度與暫停建議
 // @match        https://claude.ai/*
 // @run-at       document-idle
@@ -311,6 +311,13 @@
     .collapsed .panel { display:none; }
     .collapsed .pill { display:inline-block; }
 
+    /* 專注模式：全白背景、面板置中填滿畫面，暫停拖曳與縮放 */
+    .backdrop { display:none; position:fixed; inset:0; background:#fff; }
+    .backdrop.on { display:block; }
+    .wrap { position:relative; }
+    .focus .panel { cursor:default; }
+    .focus .panel > .rz { display:none; }
+
     @media (prefers-reduced-motion: reduce) {
       .panel::before { animation:none; }
       .remain, .advice .head { transition:none; }
@@ -376,11 +383,13 @@
   const shadow = host.attachShadow({ mode: 'open' });
   const styleEl = document.createElement('style');
   styleEl.textContent = CSS;
-  shadow.append(styleEl, $.wrap);
+  $.backdrop = h('div', { class: 'backdrop' });
+  shadow.append(styleEl, $.backdrop, $.wrap);
   document.body.append(host);
 
   // ---- 位置與收合狀態 ----
   const ui = loadJSON(CFG.uiKey, { x: null, y: null, collapsed: false, scale: 1 });
+  let focus = null;   // 專注模式狀態：null 代表一般模式；否則記錄進入前的位置與網頁捲動設定
   // 縮放上限 = 目前面板在 1 倍時的尺寸，放大到碰到視窗寬或高為止
   function fitScale() {
     const r = host.getBoundingClientRect();
@@ -401,6 +410,7 @@
     ui.x = x; ui.y = y;
   }
   function setCollapsed(c) {
+    if (c && focus) toggleFocus();                     // 收合前先離開專注模式
     ui.collapsed = c;
     $.wrap.classList.toggle('collapsed', c);
     saveJSON(CFG.uiKey, ui);
@@ -410,6 +420,7 @@
   // 面板實際尺寸一有變化（收合↔展開、縮放、文字行數增減、視窗縮小），
   // 就用目前的實際位置重新夾一次邊界，確保永遠留在可視範圍內
   function keepInView() {
+    if (focus) { fitCenter(); return; }                // 專注模式：重新填滿並置中
     if (!ui.collapsed && ui.scale > fitScale() + 1e-3) applyScale(ui.scale);  // 視窗變小時先縮到放得下
     const r = host.getBoundingClientRect();
     if (r.left < 0 || r.top < 0 || r.right > innerWidth || r.bottom > innerHeight) {
@@ -429,7 +440,7 @@
     let suppressClick = false;
 
     el.addEventListener('pointerdown', (e) => {
-      if (e.button !== 0) return;                       // 只接受主要按鍵
+      if (e.button !== 0 || focus) return;              // 只接受主要按鍵；專注模式不能拖曳
       if (el === $.panel && e.target.closest('button, .rz')) return;  // 按鈕與縮放把手不觸發拖曳
       const r = host.getBoundingClientRect();
       st = { px: e.clientX, py: e.clientY, left: r.left, top: r.top, moved: false, id: e.pointerId };
@@ -466,6 +477,49 @@
   }
   makeDraggable($.panel);
   makeDraggable($.pill);
+
+  // ---- 專注模式：雙擊標題列在「1 倍」與「填滿畫面」之間切換 ----
+  function fitCenter() {
+    applyScale(Infinity);                              // clampScale 會把它壓到剛好填滿可視範圍
+    const r = host.getBoundingClientRect();
+    host.style.left = `${Math.max(0, (innerWidth - r.width) / 2)}px`;
+    host.style.top = `${Math.max(0, (innerHeight - r.height) / 2)}px`;
+    host.style.right = 'auto';
+  }
+
+  function toggleFocus() {
+    if (!focus) {
+      if (ui.collapsed) return;
+      focus = { x: ui.x, y: ui.y, overflow: document.documentElement.style.overflow };
+      document.documentElement.style.overflow = 'hidden';   // 暫停網頁捲動
+      $.backdrop.classList.add('on');
+      $.wrap.classList.add('focus');
+      fitCenter();
+    } else {
+      const prev = focus;
+      focus = null;
+      $.backdrop.classList.remove('on');
+      $.wrap.classList.remove('focus');
+      document.documentElement.style.overflow = prev.overflow;
+      applyScale(1);                                   // 回到 1 倍
+      if (prev.x != null) place(prev.x, prev.y);       // 回到原本的位置
+      else { host.style.left = ''; host.style.right = '16px'; host.style.top = '72px'; }
+      saveJSON(CFG.uiKey, ui);
+    }
+  }
+
+  $.header.title = '雙擊：填滿畫面／還原（Esc 也可還原）';
+  // 面板在 pointerdown 時會捕獲指標，dblclick 的目標因此變成面板本身，
+  // 所以掛在面板上，再用座標判斷是否落在標題列內
+  $.panel.addEventListener('dblclick', (e) => {
+    if (e.target.closest('button, .rz')) return;
+    const r = $.header.getBoundingClientRect();
+    if (e.clientX < r.left || e.clientX > r.right || e.clientY < r.top || e.clientY > r.bottom) return;
+    toggleFocus();
+  });
+  document.addEventListener('keydown', (e) => {
+    if (e.key === 'Escape' && focus) toggleFocus();
+  });
 
   // ---- 拖曳四角等比縮放 ----
   // 內容版面固定，因此寬高鎖定比例一起縮放，文字與數字跟著放大縮小
