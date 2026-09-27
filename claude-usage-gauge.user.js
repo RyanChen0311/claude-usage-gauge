@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Claude 用量儀表
 // @namespace    https://github.com/RyanChen0311
-// @version      2.8.0
+// @version      2.8.1
 // @description  在 claude.ai 顯示 5 小時用量、重置倒數、消耗速度與暫停建議
 // @match        https://claude.ai/*
 // @run-at       document-idle
@@ -675,11 +675,12 @@
   async function togglePip() {
     if (pipWin) { pipWin.close(); return; }            // 已彈出：關閉視窗即回到網頁內
     if (focus) toggleFocus();
-    const r = host.getBoundingClientRect();
     let w;
     try {
+      // 以整個螢幕可用範圍請求；瀏覽器會自動壓到它允許的最大尺寸
+      // （規格要求限制最大尺寸，避免置頂視窗蓋滿螢幕，實際約為螢幕的八成）
       w = await window.documentPictureInPicture.requestWindow({
-        width: Math.round(r.width), height: Math.round(r.height),
+        width: screen.availWidth, height: screen.availHeight,
       });
     } catch (e) {
       lastErr = `無法開啟獨立視窗：${e.message || e}`;
