@@ -17,3 +17,6 @@ dist/
 
 # 相依套件（日後若加入建置工具）
 node_modules/
+
+# Windows 下載標記（透過 WSL 複製檔案時可能產生）
+*:Zone.Identifier
