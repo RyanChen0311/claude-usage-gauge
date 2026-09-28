@@ -16,7 +16,8 @@
   // ================= 設定 =================
   const CFG = {
     windowMin: 300,        // 5 小時週期（分鐘）
-    pollMs: 60_000,        // 自動更新間隔
+    pollMs: 60_000,        // 自動更新間隔（毫秒，最短 30 秒）；只在看得到面板時更新，
+                           // claude.ai 分頁在背景且沒有開彈出視窗時，完全不發請求
     rateWindowMin: 15,     // 即時速度：取最近 15 分鐘樣本
     minSpanMin: 3,         // 樣本跨度不足 3 分鐘時改用週期平均
     resetJitterMs: 5 * 60_000,  // 重置時間變動超過 5 分鐘（或用量下降）視為新週期，清空樣本
@@ -754,6 +755,7 @@
   async function refresh() {
     if (busy || closed) return;
     busy = true;
+    lastAttempt = Date.now();
     $.refresh.disabled = true;
     $.refresh.classList.add('busy');
     $.refresh.title = '更新中…';
@@ -772,16 +774,39 @@
       $.refresh.classList.remove('busy');
       $.refresh.title = '重新整理';
       render(); renderFoot();
+      schedulePoll();                                  // 不論自動或手動更新，都從這次重新計時
     }
   }
 
+  // ---- 自動更新：只在看得到面板時才向用量端點發請求 ----
+  // 看得到的定義：面板在網頁內時看 claude.ai 分頁；彈出到獨立視窗時看彈出視窗。
+  // 看不到時不排程；重新看到時，若距離上次更新已超過間隔就立刻補抓，否則等到間隔滿再抓。
+  let pollTimer = null, lastAttempt = 0;
+  const pollMs = () => Math.max(30_000, CFG.pollMs);
+  function panelVisible() {
+    if (closed) return false;
+    if (popWin) {
+      try { return !popWin.closed && popWin.document.visibilityState === 'visible'; }
+      catch { return false; }
+    }
+    return document.visibilityState === 'visible';
+  }
+  function schedulePoll() {
+    if (pollTimer) {
+      try { pollTimer.win.clearTimeout(pollTimer.id); } catch { /* 視窗已關閉 */ }
+      pollTimer = null;
+    }
+    if (!panelVisible()) return;
+    // 彈出時改用彈出視窗的計時器，避免 claude.ai 分頁在背景被 Chrome 節流
+    const win = popWin || window;
+    const wait = Math.max(0, lastAttempt + pollMs() - Date.now());
+    pollTimer = { win, id: win.setTimeout(() => { pollTimer = null; refresh(); }, wait) };
+  }
+
   render();
-  refresh();
-  const pollTimer = setInterval(refresh, CFG.pollMs);
+  schedulePoll();                                      // 分頁在前景時立刻抓一次；在背景開啟則等切回來
   const renderTimer = setInterval(render, 1000);
-  document.addEventListener('visibilitychange', () => {
-    if (document.visibilityState === 'visible') refresh();
-  });
+  document.addEventListener('visibilitychange', schedulePoll);
 
   // ---- 彈出視窗：把整個面板搬到一般的瀏覽器視窗 ----
   // 面板的畫面與樣式都在 Shadow DOM 內，搬動 host 即可整塊帶走；
@@ -822,6 +847,7 @@
     $.wrap.style.zoom = String(ui.scale);              // 恢復網頁內的倍率
     if (ui.x != null) place(ui.x, ui.y);
     keepInView();
+    schedulePoll();                                    // 可見性改回依 claude.ai 分頁判斷
   }
 
   function togglePopout() {
@@ -857,6 +883,9 @@
     w.focus();
     // 使用者用系統的 × 關閉彈出視窗時，把面板搬回網頁
     w.addEventListener('pagehide', restoreFromPopout);
+    // 彈出視窗最小化或被切走時停止更新，回到前景再恢復
+    w.document.addEventListener('visibilitychange', schedulePoll);
+    schedulePoll();
   }
 
   // 保險：部分情況 pagehide 不會觸發，定期檢查視窗是否已被關閉
@@ -869,7 +898,7 @@
   function closePanel() {
     if (focus) toggleFocus();          // 先離開專注模式，還原網頁捲動與白色背景
     closed = true;
-    clearInterval(pollTimer);
+    schedulePoll();                    // closed 為 true，只會清除計時器、不再排程
     clearInterval(renderTimer);
     if (popWin) popWin.close();        // closed 已設為 true，不會再把面板搬回網頁
     host.remove();
