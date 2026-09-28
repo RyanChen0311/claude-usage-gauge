@@ -34,6 +34,13 @@
       warnK: 1.0,          // k > 1.0 → 黃：會提前耗盡
       critK: 1.5,          // k > 1.5 → 紅：剩餘時間還有 1/3 以上就會耗盡
     },
+    // Liquid Glass 參數：中央輕微模糊、邊緣像厚玻璃一樣折射背景
+    glass: {
+      blur: 3,             // 背景模糊（px），越小越清透
+      refraction: 60,      // 邊緣折射強度（位移像素）
+      bezel: 26,           // 折射帶寬度（px），從邊緣往內
+      saturate: 1.7,       // 透過玻璃的色彩飽和度
+    },
     scaleMin: 0.6,         // 面板縮放下限；上限不設固定值，放大到剛好填滿可視範圍為止
     storeKey: 'cug.samples',    // localStorage：用量取樣紀錄
     uiKey: 'cug.ui',            // localStorage：位置、收合狀態、縮放倍率
@@ -219,33 +226,47 @@
   const CSS = `
     :host { all: initial;
       --ink:#0C2340; --dim:#4A6480;
-      --tier-y:#C98A00; --tier-r:#D93A3A; }
+      --tier-y:#C98A00; --tier-r:#D93A3A;
+      --tint:rgba(255,255,255,.16); --halo:rgba(255,255,255,.75);
+      --track:rgba(12,35,64,.10); --sep:rgba(255,255,255,.35); }
+    /* 深色網頁：文字改淺色、玻璃改帶一點深色，如同 iOS 依背景自動調整 */
+    .wrap.dark { --ink:#F1F5F9; --dim:#AEBBC8; --tier-y:#F2B233; --tier-r:#FF6B6B;
+      --tint:rgba(24,28,34,.26); --halo:rgba(0,0,0,.45);
+      --track:rgba(255,255,255,.18); --sep:rgba(255,255,255,.14); }
     * { box-sizing:border-box; }
     .wrap { font-family:"Bahnschrift","DIN Alternate","Segoe UI","Microsoft JhengHei","PingFang TC",sans-serif; }
 
-    /* 水滴玻璃面板：底色更透明，改靠模糊與提亮背景維持可讀性
-       brightness(1.25) 讓深色網頁透過玻璃時也被提亮，深色文字仍看得清楚 */
+    /* Liquid Glass 面板
+       - backdrop-filter 引用 Shadow DOM 內的 SVG 濾鏡 #cug-lg：輕微模糊 → 邊緣位移折射 → 提高飽和度
+       - ::before：跟著游標移動的鏡面高光；::after：沿著邊緣的高光描邊（左上亮、右下次亮） */
     .panel { position:relative; width:400px; max-width:calc(100vw - 24px); color:var(--ink);
-      background:linear-gradient(135deg, rgba(255,255,255,.42), rgba(214,236,255,.20));
-      -webkit-backdrop-filter:blur(30px) saturate(200%) brightness(1.25);
-      backdrop-filter:blur(30px) saturate(200%) brightness(1.25);
-      border:1px solid rgba(255,255,255,.65); border-radius:24px; overflow:hidden;
-      box-shadow:0 18px 40px rgba(12,35,64,.18), inset 0 1px 0 rgba(255,255,255,.9),
-                 inset 0 0 0 1px rgba(255,255,255,.18), inset 0 -14px 32px rgba(120,190,255,.16); }
-    .panel::before { content:""; position:absolute; width:320px; height:320px; top:-160px; left:-80px;
-      border-radius:50%; pointer-events:none;
-      background:radial-gradient(closest-side, rgba(255,255,255,.45), rgba(180,225,255,.16) 55%, transparent);
-      animation:drift 18s ease-in-out infinite alternate; }
+      background:var(--tint); border-radius:24px; overflow:hidden;
+      -webkit-backdrop-filter:blur(12px) saturate(180%);
+      backdrop-filter:url(#cug-lg);
+      text-shadow:0 1px 2px var(--halo); }
+    /* 注意：box-shadow 不能加在 .panel 本身。Chrome 會把陰影範圍算進 SVG 濾鏡的區域，
+       使折射與模糊整塊偏移；因此外陰影放在 .wrap，內陰影放在 ::before */
+    .wrap:not(.collapsed):not(.popout) { border-radius:24px;
+      box-shadow:0 16px 36px rgba(12,35,64,.20), 0 2px 6px rgba(12,35,64,.08); }
+    .panel::before { content:""; position:absolute; inset:0; border-radius:inherit; pointer-events:none;
+      background:radial-gradient(circle at var(--mx, 25%) var(--my, 0%),
+        rgba(255,255,255,.38), rgba(255,255,255,.10) 30%, rgba(255,255,255,0) 55%);
+      box-shadow:inset 2px 3px 6px rgba(255,255,255,.35), inset -2px -3px 8px rgba(0,0,0,.06); }
+    .panel::after { content:""; position:absolute; inset:0; border-radius:inherit; padding:1.5px;
+      pointer-events:none; z-index:2;
+      background:linear-gradient(135deg, rgba(255,255,255,.95), rgba(255,255,255,.18) 32%,
+        rgba(255,255,255,.08) 62%, rgba(255,255,255,.70));
+      -webkit-mask:linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0);
+      -webkit-mask-composite:xor; mask-composite:exclude; }
     .panel > * { position:relative; z-index:1; }
 
     /* 四個角的縮放把手（透明，只改變游標） */
     .panel > .rz { position:absolute; z-index:3; touch-action:none; width:18px; height:18px; }
     .rz.ne { top:0; right:0; cursor:nesw-resize; } .rz.sw { bottom:0; left:0; cursor:nesw-resize; }
     .rz.nw { top:0; left:0; cursor:nwse-resize; }  .rz.se { bottom:0; right:0; cursor:nwse-resize; }
-    @keyframes drift { to { transform:translate(220px, 260px) scale(1.15); } }
 
     header { display:flex; align-items:center; gap:8px; padding:12px 12px 10px 18px;
-      border-bottom:1px solid rgba(255,255,255,.6); }
+      border-bottom:1px solid var(--sep); }
     /* 平常維持一般游標；按住面板或膠囊時才變成抓握的手掌 */
     .panel, .pill { cursor:default; user-select:none; -webkit-user-select:none; touch-action:none; }
     .pressing .panel, .pressing .pill { cursor:grabbing; }
@@ -275,7 +296,7 @@
 
     /* 進度條：扁平細條，仿官方 設定 → 用量 */
     .bar { padding:10px 18px 4px; }
-    .track { height:8px; border-radius:999px; overflow:hidden; background:rgba(12,35,64,.10); }
+    .track { height:8px; border-radius:999px; overflow:hidden; background:var(--track); }
     .fill { height:100%; width:0; border-radius:999px; background:var(--bar, #2C84DB); }
     .used { display:flex; justify-content:space-between; gap:8px; margin-top:6px;
       font-size:14px; color:var(--dim); white-space:nowrap;
@@ -307,10 +328,9 @@
     /* 收合後的水滴膠囊 */
     .pill { display:none; font-size:20px; font-weight:700; font-variant-numeric:tabular-nums;
       padding:10px 20px; color:var(--bar, #2C84DB);
-      background:linear-gradient(135deg, rgba(255,255,255,.42), rgba(214,236,255,.20));
-      -webkit-backdrop-filter:blur(24px) saturate(200%) brightness(1.25);
-      backdrop-filter:blur(24px) saturate(200%) brightness(1.25);
-      border:1px solid rgba(255,255,255,.65);
+      background:var(--tint); text-shadow:0 1px 2px var(--halo);
+      -webkit-backdrop-filter:blur(10px) saturate(180%); backdrop-filter:blur(10px) saturate(180%);
+      border:1px solid rgba(255,255,255,.7);
       box-shadow:0 10px 26px rgba(12,35,64,.22), inset 0 1px 0 #fff; }
     .collapsed .panel { display:none; }
     .collapsed .pill { display:inline-block; }
@@ -331,7 +351,6 @@
     .popout .panel > .rz, .popout .collapse-btn { display:none; }
 
     @media (prefers-reduced-motion: reduce) {
-      .panel::before { animation:none; }
       .remain, .advice .head { transition:none; }
     }
   `;
@@ -406,8 +425,28 @@
   const shadow = host.attachShadow({ mode: 'open' });
   const styleEl = document.createElement('style');
   styleEl.textContent = CSS;
+  // ---- Liquid Glass 濾鏡：放在 Shadow DOM 內，面板以 url(#cug-lg) 引用 ----
+  // 以 createElementNS 建立，避開 innerHTML（claude.ai 可能啟用 Trusted Types）
+  function svgEl(tag, attrs, ...kids) {
+    const el = document.createElementNS('http://www.w3.org/2000/svg', tag);
+    for (const [k, v] of Object.entries(attrs)) el.setAttribute(k, String(v));
+    el.append(...kids);
+    return el;
+  }
+  // primitiveUnits 採 objectBoundingBox：位移圖固定鋪滿面板本身（0～1），不受面板在頁面上的位置、
+  // Shadow DOM 或縮放影響；模糊與位移量則在 updateGlassMap() 依面板尺寸換算成比例
+  $.lgMap = svgEl('feImage', { x: 0, y: 0, width: 1, height: 1, preserveAspectRatio: 'none', result: 'map' });
+  $.lgBlur = svgEl('feGaussianBlur', { in: 'SourceGraphic', stdDeviation: 0, result: 'soft' });
+  $.lgDisp = svgEl('feDisplacementMap', { in: 'soft', in2: 'map', scale: 0,
+    xChannelSelector: 'R', yChannelSelector: 'G', result: 'bent' });
+  $.lgSvg = svgEl('svg', { width: 0, height: 0, style: 'position:absolute', 'aria-hidden': 'true' },
+    svgEl('filter', { id: 'cug-lg', x: 0, y: 0, width: 1, height: 1,
+      filterUnits: 'objectBoundingBox', primitiveUnits: 'objectBoundingBox', 'color-interpolation-filters': 'sRGB' },
+      $.lgMap, $.lgBlur, $.lgDisp,
+      svgEl('feColorMatrix', { in: 'bent', type: 'saturate', values: CFG.glass.saturate })));
+
   $.backdrop = h('div', { class: 'backdrop' });
-  shadow.append(styleEl, $.backdrop, $.wrap);
+  shadow.append(styleEl, $.lgSvg, $.backdrop, $.wrap);
   document.body.append(host);
 
   // ---- 位置與收合狀態 ----
@@ -582,10 +621,90 @@
     }
   })();
 
+  // ---- Liquid Glass：位移圖 ----
+  // 以面板實際尺寸產生位移圖：R、G 兩個通道記錄每個像素要往哪裡取樣。
+  // 只有靠近邊緣的「折射帶」有位移，方向朝向面板內側，越靠邊越強（平方衰減），
+  // 看起來就像背景在厚玻璃邊緣被彎曲；中央區域不位移，保持清透。
+  let lgSize = '';
+  function updateGlassMap() {
+    const w = Math.round($.panel.offsetWidth), h = Math.round($.panel.offsetHeight);
+    if (!w || !h || `${w}x${h}` === lgSize) return;
+    lgSize = `${w}x${h}`;
+    const r = parseFloat(getComputedStyle($.panel).borderTopLeftRadius) || 0;
+    const bezel = CFG.glass.bezel;
+    const cv = document.createElement('canvas');
+    cv.width = w; cv.height = h;
+    const ctx = cv.getContext('2d');
+    const img = ctx.createImageData(w, h);
+    const d = img.data;
+    for (let j = 0; j < h; j++) {
+      for (let i = 0; i < w; i++) {
+        const px = i + 0.5, py = j + 0.5;
+        // 最近的內核點：圓角區域取圓心，直邊區域取同一水平／垂直線上的點
+        const qx = Math.min(Math.max(px, r), w - r), qy = Math.min(Math.max(py, r), h - r);
+        const vx = px - qx, vy = py - qy, len = Math.hypot(vx, vy);
+        let nx = 0, ny = 0, dist;
+        if (len > 0) { nx = vx / len; ny = vy / len; dist = r - len; }
+        else {
+          dist = Math.min(px, py, w - px, h - py);
+          if (dist === px) nx = -1; else if (dist === w - px) nx = 1; else if (dist === py) ny = -1; else ny = 1;
+        }
+        let m = Math.max(0, 1 - dist / bezel); m *= m;
+        const k = (j * w + i) * 4;
+        d[k] = 128 - nx * 127 * m;       // R：水平位移
+        d[k + 1] = 128 - ny * 127 * m;   // G：垂直位移
+        d[k + 2] = 128; d[k + 3] = 255;
+      }
+    }
+    ctx.putImageData(img, 0, 0);
+    $.lgMap.setAttribute('href', cv.toDataURL());
+    // 以面板尺寸把像素換算成 objectBoundingBox 比例（x 依寬、y 依高）
+    $.lgBlur.setAttribute('stdDeviation', `${CFG.glass.blur / w} ${CFG.glass.blur / h}`);
+    $.lgDisp.setAttribute('scale', String(CFG.glass.refraction / Math.min(w, h)));
+  }
+  let lgQueued = false;
+  new ResizeObserver(() => {
+    if (lgQueued) return;
+    lgQueued = true;
+    requestAnimationFrame(() => { lgQueued = false; updateGlassMap(); });
+  }).observe($.panel);
+
+  // ---- Liquid Glass：鏡面高光跟著游標 ----
+  $.panel.addEventListener('pointermove', (e) => {
+    const r = $.panel.getBoundingClientRect();
+    $.panel.style.setProperty('--mx', `${((e.clientX - r.left) / r.width) * 100}%`);
+    $.panel.style.setProperty('--my', `${((e.clientY - r.top) / r.height) * 100}%`);
+  });
+  $.panel.addEventListener('pointerleave', () => {
+    $.panel.style.removeProperty('--mx');
+    $.panel.style.removeProperty('--my');
+  });
+
+  // ---- 依網頁明暗自動切換淺色／深色玻璃 ----
+  function parseRGB(c) {
+    const m = /rgba?\(([^)]+)\)/.exec(c || '');
+    if (!m) return null;
+    const p = m[1].split(/[\s,\/]+/).filter(Boolean).map(Number);
+    return p.length > 3 && p[3] === 0 ? null : p;       // 完全透明視為沒有設定
+  }
+  function pageIsDark() {
+    const de = document.documentElement;
+    const hint = `${de.className} ${document.body ? document.body.className : ''} ${Object.values(de.dataset).join(' ')}`.toLowerCase();
+    if (/\bdark\b/.test(hint)) return true;
+    if (/\blight\b/.test(hint)) return false;
+    for (const el of [document.body, de]) {
+      const rgb = el && parseRGB(getComputedStyle(el).backgroundColor);
+      if (rgb) return (0.2126 * rgb[0] + 0.7152 * rgb[1] + 0.0722 * rgb[2]) / 255 < 0.4;
+    }
+    return matchMedia('(prefers-color-scheme: dark)').matches;
+  }
+
   // ---- 每秒重繪 ----
   let lastOk = null, lastErr = null;
 
   function render() {
+    // 彈出視窗與專注模式的背景都是淺色，只有在網頁內才跟著網頁明暗切換
+    $.wrap.classList.toggle('dark', !popWin && !focus && pageIsDark());
     if (!samples.length) return;
     const a = analyze(Date.now());
 
