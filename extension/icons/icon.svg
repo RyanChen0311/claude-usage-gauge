@@ -1,13 +1,14 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 128 128">
+  <!-- 淺色玻璃底：與面板相同的白 → 淡藍漸層，細邊框確保淺色工具列上仍看得出輪廓 -->
   <defs>
     <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1">
-      <stop offset="0" stop-color="#6CC4FF"/><stop offset="1" stop-color="#1C6CD2"/>
+      <stop offset="0" stop-color="#FFFFFF"/><stop offset="1" stop-color="#CFE4FA"/>
     </linearGradient>
   </defs>
-  <rect x="4" y="4" width="120" height="120" rx="28" fill="url(#bg)"/>
-  <ellipse cx="64" cy="30" rx="46" ry="20" fill="#fff" opacity=".22"/>
-  <path d="M31.09 91.00 A38 38 0 1 1 96.91 91.00" fill="none" stroke="#fff" stroke-opacity=".35" stroke-width="12" stroke-linecap="round"/>
-  <path d="M31.09 91.00 A38 38 0 0 1 88.43 42.89" fill="none" stroke="#fff" stroke-width="12" stroke-linecap="round"/>
-  <line x1="64" y1="72" x2="84.57" y2="47.49" stroke="#fff" stroke-width="7" stroke-linecap="round"/>
-  <circle cx="64" cy="72" r="8" fill="#fff"/>
+  <rect x="5" y="5" width="118" height="118" rx="28" fill="url(#bg)" stroke="rgba(12,35,64,.18)" stroke-width="3"/>
+  <ellipse cx="52" cy="26" rx="44" ry="16" fill="#fff" opacity=".7"/>
+  <path d="M31.09 91.00 A38 38 0 1 1 96.91 91.00" fill="none" stroke="#0C2340" stroke-opacity=".12" stroke-width="12" stroke-linecap="round"/>
+  <path d="M31.09 91.00 A38 38 0 0 1 88.43 42.89" fill="none" stroke="#2C84DB" stroke-width="12" stroke-linecap="round"/>
+  <line x1="64" y1="72" x2="84.57" y2="47.49" stroke="#0C2340" stroke-width="7" stroke-linecap="round"/>
+  <circle cx="64" cy="72" r="8" fill="#0C2340"/>
 </svg>
