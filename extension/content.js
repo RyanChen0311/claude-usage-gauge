@@ -223,16 +223,18 @@
     * { box-sizing:border-box; }
     .wrap { font-family:"Bahnschrift","DIN Alternate","Segoe UI","Microsoft JhengHei","PingFang TC",sans-serif; }
 
-    /* 水滴玻璃面板 */
+    /* 水滴玻璃面板：底色更透明，改靠模糊與提亮背景維持可讀性
+       brightness(1.25) 讓深色網頁透過玻璃時也被提亮，深色文字仍看得清楚 */
     .panel { position:relative; width:400px; max-width:calc(100vw - 24px); color:var(--ink);
-      background:linear-gradient(135deg, rgba(255,255,255,.74), rgba(214,236,255,.46));
-      -webkit-backdrop-filter:blur(22px) saturate(180%); backdrop-filter:blur(22px) saturate(180%);
-      border:1px solid rgba(255,255,255,.75); border-radius:24px; overflow:hidden;
-      box-shadow:0 18px 40px rgba(12,35,64,.22), inset 0 1px 0 rgba(255,255,255,.95),
-                 inset 0 -12px 30px rgba(120,190,255,.20); }
+      background:linear-gradient(135deg, rgba(255,255,255,.42), rgba(214,236,255,.20));
+      -webkit-backdrop-filter:blur(30px) saturate(200%) brightness(1.25);
+      backdrop-filter:blur(30px) saturate(200%) brightness(1.25);
+      border:1px solid rgba(255,255,255,.65); border-radius:24px; overflow:hidden;
+      box-shadow:0 18px 40px rgba(12,35,64,.18), inset 0 1px 0 rgba(255,255,255,.9),
+                 inset 0 0 0 1px rgba(255,255,255,.18), inset 0 -14px 32px rgba(120,190,255,.16); }
     .panel::before { content:""; position:absolute; width:320px; height:320px; top:-160px; left:-80px;
       border-radius:50%; pointer-events:none;
-      background:radial-gradient(closest-side, rgba(255,255,255,.65), rgba(180,225,255,.25) 55%, transparent);
+      background:radial-gradient(closest-side, rgba(255,255,255,.45), rgba(180,225,255,.16) 55%, transparent);
       animation:drift 18s ease-in-out infinite alternate; }
     .panel > * { position:relative; z-index:1; }
 
@@ -305,8 +307,10 @@
     /* 收合後的水滴膠囊 */
     .pill { display:none; font-size:20px; font-weight:700; font-variant-numeric:tabular-nums;
       padding:10px 20px; color:var(--bar, #2C84DB);
-      background:linear-gradient(135deg, rgba(255,255,255,.7), rgba(214,236,255,.35));
-      -webkit-backdrop-filter:blur(18px) saturate(180%); backdrop-filter:blur(18px) saturate(180%);
+      background:linear-gradient(135deg, rgba(255,255,255,.42), rgba(214,236,255,.20));
+      -webkit-backdrop-filter:blur(24px) saturate(200%) brightness(1.25);
+      backdrop-filter:blur(24px) saturate(200%) brightness(1.25);
+      border:1px solid rgba(255,255,255,.65);
       box-shadow:0 10px 26px rgba(12,35,64,.22), inset 0 1px 0 #fff; }
     .collapsed .panel { display:none; }
     .collapsed .pill { display:inline-block; }
