@@ -4,7 +4,7 @@
 
 以 Chrome 擴充功能（Manifest V3）實作，介面採 Liquid Glass 風格，會依網頁明暗自動切換。
 
-![面板截圖：淺色與深色網頁](docs/screenshot.png)
+![面板截圖：claude.ai 淺色（左）與深色（右）主題下的 Liquid Glass 面板](docs/screenshot.png)
 
 ## 功能
 
