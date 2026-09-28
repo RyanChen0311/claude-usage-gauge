@@ -1,0 +1,19 @@
+# 作業系統
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# 編輯器
+.vscode/
+.idea/
+*.swp
+
+# 擴充功能打包產物
+# .pem 是 Chrome「封裝擴充功能」產生的私鑰，外洩後他人可冒用擴充功能身分，絕不能上傳
+*.pem
+*.crx
+*.zip
+dist/
+
+# 相依套件（日後若加入建置工具）
+node_modules/
